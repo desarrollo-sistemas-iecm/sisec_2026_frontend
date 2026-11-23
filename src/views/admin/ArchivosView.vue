@@ -39,26 +39,72 @@ const goToFolder = (folderName) => {
 }
 
 const deleteFile = async (filepath) => {
-  const result = await Swal.fire({
-    title: '¿Eliminar archivo?',
-    text: "Esta acción no se puede deshacer.",
+  const filename = filepath.split('/').pop()
+  const { value: formValues } = await Swal.fire({
+    title: '⚠️ Reto de Seguridad Obligatorio',
+    html: `
+      <div class="text-left space-y-3 text-sm">
+        <p class="text-slate-700 dark:text-slate-300">
+          Estás a punto de eliminar permanentemente el archivo:
+        </p>
+        <div class="p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg font-mono text-xs text-red-800 dark:text-red-300 break-all">
+          ${filename}
+        </div>
+        <p class="text-xs text-slate-500">
+          Esta acción no se puede deshacer y quedará grabada en la bitácora institucional de auditoría.
+        </p>
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 dark:text-slate-400 mb-1">
+            Escribe exactamente la palabra <span class="text-red-600 font-extrabold tracking-wider">ELIMINAR</span> para confirmar:
+          </label>
+          <input id="swal-confirm-word" type="text" placeholder="ELIMINAR" class="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm uppercase font-mono focus:ring-2 focus:ring-red-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-600 dark:text-slate-400 mb-1">
+            Motivo institucional de eliminación (opcional):
+          </label>
+          <input id="swal-motivo" type="text" placeholder="Ej. Archivo corrupto / reemplazo solicitado" class="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500" />
+        </div>
+      </div>
+    `,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#ef4444',
     cancelButtonColor: '#64748b',
-    confirmButtonText: 'Sí, eliminar',
-    cancelButtonText: 'Cancelar'
+    confirmButtonText: 'Confirmar y Eliminar',
+    cancelButtonText: 'Cancelar',
+    focusConfirm: false,
+    preConfirm: () => {
+      const word = document.getElementById('swal-confirm-word').value
+      const motivo = document.getElementById('swal-motivo').value
+      if (word.trim().toUpperCase() !== 'ELIMINAR') {
+        Swal.showValidationMessage('Debes escribir exactamente la palabra "ELIMINAR" en mayúsculas.')
+        return false
+      }
+      return { word: word.trim().toUpperCase(), motivo: motivo.trim() }
+    }
   })
 
-  if (result.isConfirmed) {
+  if (formValues) {
     try {
-      const { data } = await api.delete('/admin/archivos', { data: { filepath } })
+      const { data } = await api.delete('/admin/archivos', {
+        data: {
+          filepath,
+          confirmationWord: formValues.word,
+          motivo: formValues.motivo
+        }
+      })
       if (data.success) {
-        Swal.fire('Eliminado', 'El archivo ha sido eliminado.', 'success')
+        Swal.fire({
+          icon: 'success',
+          title: 'Archivo Eliminado',
+          text: data.message || 'El archivo ha sido eliminado y auditado en la bitácora.',
+          confirmButtonColor: '#6B2D8B'
+        })
         loadTree(currentPath.value)
       }
     } catch (error) {
-      Swal.fire('Error', 'No se pudo eliminar el archivo.', 'error')
+      Swal.fire('Error', error?.response?.data?.message || 'No se pudo eliminar el archivo.', 'error')
     }
   }
 }

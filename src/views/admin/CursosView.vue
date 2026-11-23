@@ -1,179 +1,224 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { BookOpen, Search, Palette, Save, Check } from '@lucide/vue'
+import { BookOpen, Search, Palette, Save, Check, Sparkles, Filter, RefreshCw } from '@lucide/vue'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
 import AppCard from '../../components/ui/AppCard.vue'
 import AppInput from '../../components/ui/AppInput.vue'
 import AppSelect from '../../components/ui/AppSelect.vue'
 import AppButton from '../../components/ui/AppButton.vue'
-import AppBadge from '../../components/ui/AppBadge.vue'
-import AppTable from '../../components/ui/AppTable.vue'
+import { useToast } from '../../composables/useToast.js'
 
-const cursos = ref([])
+const toast = useToast()
+
+const acciones = ref([])
 const loading = ref(true)
 const search = ref('')
-const selectedType = ref('')
+const selectedVertiente = ref('')
 const savingId = ref(null)
 
-const loadCursos = async () => {
+const loadAcciones = async () => {
   loading.value = true
   try {
     const { data } = await api.get('/admin/cursos')
     if (data.success) {
-      cursos.value = data.data
+      acciones.value = (data.data || []).sort((a, b) => {
+        const numA = parseInt(String(a.clave_accion || '').replace(/\D/g, ''), 10) || Number(a.id_accion) || 0
+        const numB = parseInt(String(b.clave_accion || '').replace(/\D/g, ''), 10) || Number(b.id_accion) || 0
+        return numA - numB
+      })
     }
   } catch (error) {
-    console.error('Error fetching cursos:', error)
-    Swal.fire('Error', 'No se pudieron cargar los cursos del catálogo.', 'error')
+    toast.error('No se pudieron cargar las acciones del catálogo.')
   } finally {
     loading.value = false
   }
 }
 
-const getVertienteName = (idtipo) => {
-  const types = {
-    1: 'Talleres - Niñez',
-    2: 'Talleres - Juventud',
-    3: 'Talleres - Crianza',
-    4: 'Intervenciones Educativas',
-    5: 'Talleres - Ciudadanía'
-  }
-  return types[idtipo] || `Tipo ${idtipo}`
-}
+const vertientesList = computed(() => {
+  const set = new Set()
+  acciones.value.forEach(a => {
+    if (a.vertiente) set.add(a.vertiente)
+  })
+  return Array.from(set)
+})
 
-const getVertienteColor = (idtipo) => {
-  if (idtipo === 4) return 'success'
-  if (idtipo === 3) return 'warning'
-  return 'info'
-}
+const filteredAcciones = computed(() => {
+  const term = search.value.trim().toLowerCase()
+  const vert = selectedVertiente.value
 
-const filteredCursos = computed(() => {
-  return cursos.value.filter(c => {
-    const matchesSearch = c.descripcion.toLowerCase().includes(search.value.toLowerCase()) || String(c.idcurso).includes(search.value)
-    const matchesType = !selectedType.value || Number(c.idtipo) === Number(selectedType.value)
-    return matchesSearch && matchesType
+  return acciones.value.filter(a => {
+    const clave = (a.clave_accion || '').toLowerCase()
+    const nombre = (a.nombre_accion || a.descripcion || '').toLowerCase()
+    const matchesSearch = !term || clave.includes(term) || nombre.includes(term)
+    const matchesVert = !vert || a.vertiente === vert
+    return matchesSearch && matchesVert
   })
 })
 
 const updateColor = async (row, event) => {
   const newColor = event.target.value
-  savingId.value = row.idcurso
+  const id = row.id_accion || row.idcurso
+  savingId.value = id
   try {
-    await api.put(`/admin/cursos/${row.idcurso}/color`, { color: newColor })
+    await api.put(`/admin/cursos/${id}/color`, { color: newColor })
     row.color = newColor
+    toast.success(`Color actualizado para ${row.clave_accion || row.descripcion}`)
   } catch (error) {
-    console.error('Error updating curso color:', error)
-    Swal.fire('Error', 'No se pudo guardar el color.', 'error')
+    toast.error('No se pudo guardar el color.')
   } finally {
     savingId.value = null
   }
 }
 
 const resetColor = async (row) => {
-  savingId.value = row.idcurso
+  const id = row.id_accion || row.idcurso
+  savingId.value = id
   try {
-    await api.put(`/admin/cursos/${row.idcurso}/color`, { color: null })
-    row.color = null
+    const defaultColor = '#6B2D8B'
+    await api.put(`/admin/cursos/${id}/color`, { color: defaultColor })
+    row.color = defaultColor
+    toast.info(`Color restablecido para ${row.clave_accion || row.descripcion}`)
   } catch (error) {
-    console.error('Error resetting curso color:', error)
-    Swal.fire('Error', 'No se pudo restablecer el color.', 'error')
+    toast.error('No se pudo restablecer el color.')
   } finally {
     savingId.value = null
   }
 }
 
 onMounted(() => {
-  loadCursos()
+  loadAcciones()
 })
 </script>
 
 <template>
   <div class="space-y-6">
-    <header class="flex items-center justify-between mb-8">
+    <!-- Header banner -->
+    <header class="flex flex-wrap items-center justify-between gap-4 p-6 bg-gradient-to-r from-[#403166] to-[#6B2D8B] text-white rounded-2xl shadow-sm">
       <div class="flex items-center gap-4">
-        <div class="p-3 bg-iecm-morado-100 dark:bg-iecm-morado-950/30 text-iecm-morado-700 dark:text-iecm-morado-300 rounded-xl">
-          <BookOpen class="w-6 h-6" />
+        <div class="p-3 bg-white/15 rounded-xl border border-white/20">
+          <Palette class="w-7 h-7 text-white" />
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Catálogo de Cursos</h1>
-          <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Configura los colores identificadores y consulta el catálogo de talleres e intervenciones.</p>
+          <h1 class="text-2xl font-bold tracking-tight">Catálogo de Acciones Educativas 2027</h1>
+          <p class="text-purple-200 text-sm mt-1 max-w-xl">
+            Gestiona las 31 acciones educativas oficiales (AE-01 a AE-31). Personaliza los colores distintivos con el selector interactivo para identificar visualmente cada acción en tablas, reportes y expedientes.
+          </p>
         </div>
+      </div>
+      <div class="bg-white/10 px-4 py-2 rounded-xl text-center border border-white/20">
+        <span class="block text-xs uppercase text-purple-200 font-semibold">Total Acciones</span>
+        <span class="text-xl font-extrabold text-white">{{ acciones.length }}</span>
       </div>
     </header>
 
+    <!-- Contenedor del Catálogo -->
     <AppCard>
       <template #header>
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Filtros y Búsqueda</h2>
-          <div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-            <div class="w-full sm:w-64">
-              <AppInput v-model="search" placeholder="Buscar por ID o descripción...">
-                <template #icon><Search class="w-4 h-4" /></template>
-              </AppInput>
-            </div>
-            <div class="w-full sm:w-48">
-              <AppSelect v-model="selectedType" aria-label="Filtrar por Vertiente">
-                <option value="">Todas las vertientes</option>
-                <option value="1">Talleres - Niñez</option>
-                <option value="2">Talleres - Juventud</option>
-                <option value="3">Talleres - Crianza</option>
-                <option value="4">Intervenciones</option>
-                <option value="5">Talleres - Ciudadanía</option>
-              </AppSelect>
-            </div>
+        <div class="grid gap-4 md:grid-cols-3 items-end">
+          <div class="md:col-span-2">
+            <AppInput
+              v-model="search"
+              placeholder="Buscar por clave (ej. AE-01) o nombre de la acción..."
+              label="Buscar en el catálogo"
+            >
+              <template #icon><Search class="w-4 h-4" /></template>
+            </AppInput>
+          </div>
+          <div>
+            <AppSelect v-model="selectedVertiente" label="Filtrar por Vertiente">
+              <option value="">Todas las vertientes</option>
+              <option v-for="v in vertientesList" :key="v" :value="v">{{ v }}</option>
+            </AppSelect>
           </div>
         </div>
       </template>
 
-      <AppTable :loading="loading" :is-empty="!loading && filteredCursos.length === 0" empty-message="No se encontraron cursos en el catálogo.">
-        <template #head>
-          <th class="px-6 py-3 text-left w-20">ID</th>
-          <th class="px-6 py-3 text-left">Curso / Taller</th>
-          <th class="px-6 py-3 text-left">Vertiente / Tipo</th>
-          <th class="px-6 py-3 text-left w-32">Estado</th>
-          <th class="px-6 py-3 text-center w-48">Color Asignado</th>
-        </template>
-        <template #body>
-          <tr v-for="row in filteredCursos" :key="row.idcurso" class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-            <td class="px-6 py-4 font-bold text-slate-500 dark:text-slate-400">#{{ row.idcurso }}</td>
-            <td class="px-6 py-4 font-medium text-slate-900 dark:text-white">{{ row.descripcion }}</td>
-            <td class="px-6 py-4">
-              <AppBadge :variant="getVertienteColor(row.idtipo)">{{ getVertienteName(row.idtipo) }}</AppBadge>
-            </td>
-            <td class="px-6 py-4">
-              <AppBadge :variant="row.estatus === 1 ? 'success' : 'gray'">
-                {{ row.estatus === 1 ? 'Activo' : 'Inactivo' }}
-              </AppBadge>
-            </td>
-            <td class="px-6 py-4 text-center">
-              <div class="flex items-center justify-center gap-4">
-                <div class="relative w-10 h-10 rounded-full border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden flex items-center justify-center cursor-pointer transition-transform hover:scale-105" :style="{ backgroundColor: row.color || 'transparent' }">
+      <!-- Tabla de Acciones Educativas -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm text-slate-600 dark:text-slate-300">
+          <thead class="bg-slate-50 dark:bg-slate-800/60 text-xs font-bold uppercase text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+              <th class="w-12 px-4 py-3 text-center">#</th>
+              <th class="px-4 py-3 w-28">Clave</th>
+              <th class="px-6 py-3">Nombre de la Acción Educativa</th>
+              <th class="px-6 py-3">Vertiente Institucional</th>
+              <th class="px-6 py-3 text-center w-36">Color Distintivo</th>
+              <th class="px-6 py-3 text-center w-48">Vista Previa Badge</th>
+              <th class="px-4 py-3 text-center w-24">Acción</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            <tr
+              v-for="(row, index) in filteredAcciones"
+              :key="row.id_accion || row.idcurso"
+              class="hover:bg-purple-50/40 dark:hover:bg-purple-950/20 transition-colors"
+            >
+              <!-- Consecutivo -->
+              <td class="px-4 py-4 text-center font-bold text-slate-400 text-xs">
+                {{ index + 1 }}
+              </td>
+
+              <!-- Clave de Acción -->
+              <td class="px-4 py-4 font-mono font-extrabold text-sm text-purple-900 dark:text-purple-300">
+                {{ row.clave_accion || `ID-${row.idcurso}` }}
+              </td>
+
+              <!-- Nombre -->
+              <td class="px-6 py-4 font-medium text-slate-900 dark:text-slate-100">
+                {{ row.nombre_accion || row.descripcion }}
+              </td>
+
+              <!-- Vertiente -->
+              <td class="px-6 py-4">
+                <span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                  {{ row.vertiente || 'General' }}
+                </span>
+              </td>
+
+              <!-- Input de Color Interactivo -->
+              <td class="px-6 py-4 text-center">
+                <div class="inline-flex items-center gap-2">
                   <input
                     type="color"
                     :value="row.color || '#6B2D8B'"
+                    class="w-9 h-9 rounded-lg cursor-pointer border border-slate-300 dark:border-slate-600 bg-transparent p-0.5 shadow-xs transition-transform hover:scale-110"
+                    title="Haz clic para seleccionar un color"
                     @change="updateColor(row, $event)"
-                    class="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                    title="Seleccionar Color"
                   />
-                  <Palette v-if="!row.color" class="w-5 h-5 text-slate-400" />
-                  <Check v-else-if="savingId === row.idcurso" class="w-4 h-4 text-white animate-pulse" />
+                  <span class="font-mono text-xs uppercase font-bold text-slate-600 dark:text-slate-400">
+                    {{ row.color || '#6B2D8B' }}
+                  </span>
                 </div>
-                
-                <button
-                  v-if="row.color"
-                  @click="resetColor(row)"
-                  class="text-xs text-red-500 hover:text-red-700 font-semibold"
-                  title="Restablecer a color automático"
+              </td>
+
+              <!-- Vista Previa de Badge -->
+              <td class="px-6 py-4 text-center">
+                <span
+                  class="px-3 py-1 rounded-full text-xs font-bold text-white shadow-xs inline-flex items-center gap-1.5 transition-all"
+                  :style="{ backgroundColor: row.color || '#6B2D8B' }"
                 >
-                  Restablecer
-                </button>
-                <span v-else class="text-xs text-slate-400 font-semibold italic">Automático</span>
-              </div>
-            </td>
-          </tr>
-        </template>
-      </AppTable>
+                  <Sparkles class="w-3.5 h-3.5" />
+                  {{ row.clave_accion || 'AE-00' }}
+                </span>
+              </td>
+
+              <!-- Botón Restablecer -->
+              <td class="px-4 py-4 text-center">
+                <AppButton
+                  variant="ghost"
+                  size="sm"
+                  class="text-xs text-slate-400 hover:text-purple-700 hover:bg-purple-50"
+                  title="Restablecer al color por defecto"
+                  @click="resetColor(row)"
+                >
+                  Por defecto
+                </AppButton>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </AppCard>
   </div>
 </template>

@@ -11,10 +11,10 @@ import NotificacionesView from '../views/NotificacionesView.vue'
 
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { requiresAuth: false } },
-  { path: '/', name: 'dashboard', component: DashboardView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
+  { path: '/', name: 'dashboard', component: DashboardView, meta: { requiresAuth: true, roles: [2, 3] } },
   { path: '/programacion', name: 'programacion', component: ProgramacionView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
   { path: '/captura', name: 'captura', component: CapturaView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
-  { path: '/encuesta', name: 'encuesta', component: EncuestaView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
+  { path: '/encuesta', name: 'encuesta', component: EncuestaView, meta: { requiresAuth: true, roles: [2, 3] } },
   { path: '/reportes', name: 'reportes', component: ReportesView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
   { path: '/notificaciones', name: 'notificaciones', component: NotificacionesView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
   { 
@@ -22,13 +22,18 @@ const routes = [
     name: 'administracion', 
     component: AdministracionView, 
     meta: { requiresAuth: true, roles: [2, 3] },
-    redirect: '/administracion/usuarios',
+    redirect: (to) => {
+      const authStore = useAuthStore()
+      const permiso = Number(authStore.user?.permiso || authStore.user?.idpermiso || 1)
+      return permiso === 3 ? '/administracion/usuarios' : '/administracion/restricciones'
+    },
     children: [
-      { path: 'usuarios', name: 'admin-usuarios', component: () => import('../views/admin/UsuariosView.vue') },
-      { path: 'restricciones', name: 'admin-restricciones', component: () => import('../views/admin/RestriccionesView.vue') },
-      { path: 'archivos', name: 'admin-archivos', component: () => import('../views/admin/ArchivosView.vue') },
-      { path: 'formatos', name: 'admin-formatos', component: () => import('../views/admin/FormatosView.vue') },
-      { path: 'cursos', name: 'admin-cursos', component: () => import('../views/admin/CursosView.vue') }
+      { path: 'usuarios', name: 'admin-usuarios', component: () => import('../views/admin/UsuariosView.vue'), meta: { roles: [3] } },
+      { path: 'restricciones', name: 'admin-restricciones', component: () => import('../views/admin/RestriccionesView.vue'), meta: { roles: [2, 3] } },
+      { path: 'archivos', name: 'admin-archivos', component: () => import('../views/admin/ArchivosView.vue'), meta: { roles: [2, 3] } },
+      { path: 'formatos', name: 'admin-formatos', component: () => import('../views/admin/FormatosView.vue'), meta: { roles: [2, 3] } },
+      { path: 'cursos', name: 'admin-cursos', component: () => import('../views/admin/CursosView.vue'), meta: { roles: [2, 3] } },
+      { path: 'mensajes', name: 'admin-mensajes', component: () => import('../views/admin/MensajesPredeterminadosView.vue'), meta: { roles: [3] } }
     ]
   }
 ]
@@ -46,14 +51,15 @@ router.beforeEach((to) => {
   }
   
   if (to.name === 'login' && authStore.isAuthenticated) {
-    return { name: 'dashboard' }
+    const userPermiso = Number(authStore.user?.permiso || authStore.user?.idpermiso)
+    return userPermiso === 1 ? { name: 'programacion' } : { name: 'dashboard' }
   }
 
   // Verificación de roles (Permisos)
   if (to.meta.roles && authStore.isAuthenticated) {
     const userPermiso = Number(authStore.user?.permiso || authStore.user?.idpermiso)
     if (!to.meta.roles.includes(userPermiso)) {
-      return { name: 'dashboard' } // Redirigir si no tiene permiso
+      return userPermiso === 1 ? { name: 'programacion' } : { name: 'dashboard' }
     }
   }
 

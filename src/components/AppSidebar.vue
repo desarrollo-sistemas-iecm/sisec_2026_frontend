@@ -29,10 +29,10 @@ const userRoleName = computed(() => {
 
 const menuItems = computed(() => {
   const allItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: [1, 2, 3], activeColor: 'text-blue-400', hoverColor: 'group-hover:text-blue-400' },
+    { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: [2, 3], activeColor: 'text-blue-400', hoverColor: 'group-hover:text-blue-400' },
     { name: 'Programacion', path: '/programacion', icon: CalendarDays, roles: [1, 2, 3], activeColor: 'text-emerald-400', hoverColor: 'group-hover:text-emerald-400' },
     { name: 'Captura', path: '/captura', icon: Edit3, roles: [1, 2, 3], activeColor: 'text-amber-400', hoverColor: 'group-hover:text-amber-400' },
-    { name: 'Encuesta', path: '/encuesta', icon: ClipboardList, roles: [1, 2, 3], activeColor: 'text-rose-400', hoverColor: 'group-hover:text-rose-400' },
+    { name: 'Encuesta', path: '/encuesta', icon: ClipboardList, roles: [2, 3], activeColor: 'text-rose-400', hoverColor: 'group-hover:text-rose-400' },
     { name: 'Reportes', path: '/reportes', icon: BarChart3, roles: [1, 2, 3], activeColor: 'text-teal-400', hoverColor: 'group-hover:text-teal-400' },
     { name: 'Administracion', path: '/administracion', icon: Settings, roles: [2, 3], activeColor: 'text-purple-400', hoverColor: 'group-hover:text-purple-400' },
   ]

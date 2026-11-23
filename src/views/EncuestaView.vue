@@ -1,389 +1,457 @@
 <script setup>
-import { computed, reactive, ref, watch, onMounted } from 'vue'
-import Swal from 'sweetalert2'
-import { FileText, Save, Settings, UserCircle, MessageSquareQuote } from '@lucide/vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import {
+  ClipboardList, Search, ChevronRight, ChevronDown, FileText,
+  Download, Eye, CheckCircle2, Users, BarChart3, Building,
+  Calendar, Sparkles, Filter, RefreshCw, AlertCircle
+} from '@lucide/vue'
 import api from '../services/api.js'
 import { useAuthStore } from '../stores/authStore.js'
-import { useGsapAnimations } from '../composables/useGsapAnimations.js'
 import { useToast } from '../composables/useToast.js'
+import { useGsapAnimations } from '../composables/useGsapAnimations.js'
 
 import AppCard from '../components/ui/AppCard.vue'
+import AppTable from '../components/ui/AppTable.vue'
 import AppInput from '../components/ui/AppInput.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import AppButton from '../components/ui/AppButton.vue'
 
 const authStore = useAuthStore()
-const { animarVista } = useGsapAnimations()
 const toast = useToast()
+const { animarVista } = useGsapAnimations()
 
 const vistaRef = ref(null)
+const loading = ref(false)
+const acciones = ref([])
 
-const vertientes = [
-  { id: 1, label: 'Mujeres' },
-  { id: 2, label: 'Jóvenes' },
-  { id: 3, label: 'Hombres' },
-  { id: 5, label: 'Población en general' }
+// Filtros
+const search = ref('')
+const selectedDistrito = ref('')
+const dateFrom = ref('')
+const dateTo = ref('')
+
+// Estado de filas expandidas (Set de id_acciones_educativas)
+const expandedRows = ref(new Set())
+// Caché de encuestas por acción: { [id_accion]: { loading: boolean, data: [] } }
+const encuestasCache = ref({})
+
+// Modal para visualización rápida de PDF o detalle de encuesta
+const previewModalOpen = ref(false)
+const selectedPdfUrl = ref('')
+const selectedSurveyDetail = ref(null)
+
+// Textos descriptivos de las 6 preguntas Likert P3-P8
+const preguntasInfo = [
+  { key: 'p3', text: 'P3. ¿Los temas abordados resultaron claros e interesantes?' },
+  { key: 'p4', text: 'P4. ¿La persona facilitadora demostró dominio del tema y resolvió dudas?' },
+  { key: 'p5', text: 'P5. ¿Los materiales didácticos y actividades facilitaron la comprensión?' },
+  { key: 'p6', text: 'P6. ¿Considera que lo aprendido le será útil para su vida cotidiana o cívica?' },
+  { key: 'p7', text: 'P7. ¿El tiempo asignado a la actividad fue adecuado y suficiente?' },
+  { key: 'p8', text: 'P8. En general, ¿cuál es su nivel de satisfacción con esta acción educativa?' }
 ]
 
-const escalaLikert = [
-  { value: 1, label: 'Totalmente de acuerdo' },
-  { value: 2, label: 'De acuerdo' },
-  { value: 3, label: 'Neutral' },
-  { value: 4, label: 'En desacuerdo' },
-  { value: 5, label: 'Totalmente en desacuerdo' }
-]
-
-const INTERVENCION_VERTIENTE_ID = 4
-
-const form = reactive({
-  tipo: '',
-  vertiente: '',
-  curso: '',
-  folio: '',
-  edad: '',
-  genero: '',
-  etiqueta3: '',
-  etiqueta4: '',
-  etiqueta5: '',
-  etiqueta6: '',
-  etiqueta7: '',
-  etiqueta8: ''
-})
-
-const errors = reactive({})
-const cursos = ref([])
-const loadingCursos = ref(false)
-const saving = ref(false)
-
-const cursoSeleccionado = computed(() => {
-  const found = cursos.value.find((item) => String(item.idcurso) === String(form.curso))
-  return found?.descripcion || ''
-})
-
-const clearErrors = () => {
-  Object.keys(errors).forEach((key) => {
-    errors[key] = ''
-  })
+const getLikertBadge = (val) => {
+  switch (Number(val)) {
+    case 5:
+      return { text: '5 - Totalmente de acuerdo', class: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
+    case 4:
+      return { text: '4 - De acuerdo', class: 'bg-teal-100 text-teal-800 border-teal-300' }
+    case 3:
+      return { text: '3 - Neutral', class: 'bg-amber-100 text-amber-800 border-amber-300' }
+    case 2:
+      return { text: '2 - En desacuerdo', class: 'bg-orange-100 text-orange-800 border-orange-300' }
+    case 1:
+      return { text: '1 - Totalmente en desacuerdo', class: 'bg-rose-100 text-rose-800 border-rose-300' }
+    default:
+      return { text: 'N/A', class: 'bg-slate-100 text-slate-600 border-slate-300' }
+  }
 }
 
-const resetAnswers = () => {
-  form.edad = ''
-  form.genero = ''
-  form.etiqueta3 = ''
-  form.etiqueta4 = ''
-  form.etiqueta5 = ''
-  form.etiqueta6 = ''
-  form.etiqueta7 = ''
-  form.etiqueta8 = ''
-}
-
-const resetCatalog = () => {
-  form.vertiente = ''
-  form.curso = ''
-  form.folio = ''
-  cursos.value = []
-}
-
-const loadCursos = async (vertienteId) => {
-  if (!vertienteId) return
-  loadingCursos.value = true
+// Cargar listado de acciones que tienen o pueden tener encuestas
+const loadAcciones = async () => {
+  loading.value = true
   try {
-    const { data } = await api.get('/cursos', { params: { vertiente: vertienteId } })
-    cursos.value = data?.data ?? []
+    const params = {}
+    if (selectedDistrito.value) {
+      params.id_distrito = selectedDistrito.value
+    }
+    const { data } = await api.get('/programacion-2027/admin/acciones', { params })
+    acciones.value = data?.data ?? []
   } catch (error) {
-    toast.error('No se pudieron cargar los cursos. Intenta nuevamente.')
+    toast.error('No se pudo cargar el listado de acciones.')
   } finally {
-    loadingCursos.value = false
+    loading.value = false
   }
 }
 
-const generateFolio = async () => {
-  if (!form.tipo || !form.curso) return
-  try {
-    const { data } = await api.get('/encuestas/folio', {
-      params: {
-        distrito: authStore.user?.idsede,
-        tipo: form.tipo
-      }
-    })
-    form.folio = data?.folio || ''
-  } catch (error) {
-    toast.error('No se pudo generar el folio. Verifica la conexión.')
-  }
-}
-
-const validate = () => {
-  clearErrors()
-
-  if (!form.tipo) errors.tipo = 'Selecciona un tipo.'
-  if (form.tipo === 'T' && !form.vertiente) errors.vertiente = 'Selecciona una vertiente.'
-  if (!form.curso) errors.curso = 'Selecciona un curso.'
-  if (!form.folio) errors.folio = 'Genera el folio antes de guardar.'
-
-  const edadNum = Number(form.edad)
-  if (!form.edad || Number.isNaN(edadNum) || edadNum < 1 || edadNum > 120) {
-    errors.edad = 'Edad válida requerida (1-120).'
-  }
-
-  if (!form.genero) errors.genero = 'Selecciona un género.'
-  if (!form.etiqueta3) errors.etiqueta3 = 'P3 requerida.'
-  if (!form.etiqueta4) errors.etiqueta4 = 'P4 requerida.'
-  if (!form.etiqueta5) errors.etiqueta5 = 'P5 requerida.'
-  if (!form.etiqueta6) errors.etiqueta6 = 'P6 requerida.'
-  if (!form.etiqueta7) errors.etiqueta7 = 'P7 requerida.'
-  if (!form.etiqueta8) errors.etiqueta8 = 'P8 requerida.'
-
-  return Object.values(errors).every((value) => !value)
-}
-
-const onSubmit = async () => {
-  if (!validate()) {
-    toast.warning('Completa todos los campos obligatorios antes de guardar.')
+// Alternar expansión de una fila de acción
+const toggleExpand = async (row) => {
+  const id = row.id_acciones_educativas
+  if (expandedRows.value.has(id)) {
+    expandedRows.value.delete(id)
     return
   }
 
-  const { isConfirmed } = await Swal.fire({
-    title: '¿Guardar encuesta?',
-    html: `<b>Folio:</b> ${form.folio}<br><small class="text-slate-500 dark:text-slate-400">${cursoSeleccionado.value}</small>`,
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonColor: '#6B2D8B', // iecm-morado
-    cancelButtonColor: '#94a3b8',
-    confirmButtonText: 'Sí, guardar',
-    cancelButtonText: 'Cancelar',
-    customClass: { popup: 'rounded-2xl', confirmButton: 'rounded-lg', cancelButton: 'rounded-lg' }
-  })
+  expandedRows.value.add(id)
 
-  if (!isConfirmed) return
-
-  saving.value = true
-  try {
-    const payload = {
-      tipo: Number(form.curso),
-      vertiente: form.vertiente ? Number(form.vertiente) : null,
-      folio_encuesta: form.folio,
-      edad: Number(form.edad),
-      genero: Number(form.genero),
-      etiqueta2: Number(form.etiqueta3),
-      etiqueta3: Number(form.etiqueta4),
-      etiqueta4: Number(form.etiqueta5),
-      etiqueta5: Number(form.etiqueta6),
-      etiqueta6: Number(form.etiqueta7),
-      etiqueta7: Number(form.etiqueta8)
+  // Cargar encuestas si no están en caché
+  if (!encuestasCache.value[id]) {
+    encuestasCache.value[id] = { loading: true, data: [] }
+    try {
+      const { data } = await api.get(`/captura-2027/${id}/encuestas`)
+      encuestasCache.value[id] = { loading: false, data: data?.data ?? [] }
+      // Actualizar contador
+      row.total_encuestas = (data?.data ?? []).length
+    } catch (error) {
+      encuestasCache.value[id] = { loading: false, data: [] }
+      toast.error(`Error al cargar encuestas para la acción ${row.clave_accion}`)
     }
-
-    const { data } = await api.post('/encuestas', payload)
-
-    toast.success(`Encuesta guardada correctamente. Folio: ${data?.folio_encuesta || form.folio}`)
-
-    resetCatalog()
-    resetAnswers()
-    form.tipo = ''
-    clearErrors()
-  } catch (error) {
-    toast.error(error?.response?.data?.message || 'Error al guardar la encuesta.')
-  } finally {
-    saving.value = false
   }
 }
 
-watch(
-  () => form.tipo,
-  async (value) => {
-    resetCatalog()
-    resetAnswers()
-    if (value === 'I') {
-      form.vertiente = String(INTERVENCION_VERTIENTE_ID)
-      await loadCursos(INTERVENCION_VERTIENTE_ID)
-    }
-  }
-)
+// Filtrar acciones
+const filteredAcciones = computed(() => {
+  const term = search.value.trim().toLowerCase()
+  const from = dateFrom.value
+  const to = dateTo.value
 
-watch(
-  () => form.vertiente,
-  async (value) => {
-    if (form.tipo === 'T' && value) {
-      form.curso = ''
-      form.folio = ''
-      await loadCursos(Number(value))
-    }
-  }
-)
+  return acciones.value.filter((a) => {
+    const fecha = String(a.fecha_programada || '').split('T')[0]
+    if (from && fecha < from) return false
+    if (to && fecha > to) return false
 
-watch(
-  () => form.curso,
-  async (value) => {
-    if (value) {
-      await generateFolio()
-    }
-  }
-)
+    if (!term) return true
+    const haystack = `${a.folio_accion_educativa || ''} ${a.clave_accion || ''} ${a.nombre_accion || ''} ${a.nombre_institucion || ''}`.toLowerCase()
+    return haystack.includes(term)
+  })
+})
+
+// Métricas de encuestas para KPIs
+const metrics = computed(() => {
+  const totalAcciones = acciones.value.length
+  const totalEncuestas = acciones.value.reduce((acc, a) => acc + Number(a.total_encuestas || 0), 0)
+  const accionesConEncuestas = acciones.value.filter(a => Number(a.total_encuestas || 0) > 0).length
+  return { totalAcciones, totalEncuestas, accionesConEncuestas }
+})
+
+const getPdfUrl = (row, encuesta) => {
+  const distritoKey = `DD${row.id_distrito || row.distrito || 1}`
+  const folio = row.folio_accion_educativa || `ID_${row.id_acciones_educativas}`
+  const fechaStr = String(row.fecha_programada || '').split('T')[0]
+  const filename = `E${encuesta.consecutivo_encuesta}-${row.clave_accion}-${distritoKey}-${fechaStr}.pdf`
+  const baseUploadUrl = import.meta.env.VITE_API_URL?.replace(/\/api$/, '') || ''
+  return `${baseUploadUrl}/uploads/2027/${distritoKey}/${folio}/Encuestas/${filename}`
+}
+
+const abrirPdf = (row, encuesta) => {
+  const url = getPdfUrl(row, encuesta)
+  window.open(url, '_blank')
+}
 
 onMounted(() => {
+  loadAcciones()
   if (vistaRef.value) animarVista(vistaRef.value)
+})
+
+watch(selectedDistrito, () => {
+  loadAcciones()
 })
 </script>
 
 <template>
-  <div ref="vistaRef" class="space-y-6 max-w-5xl mx-auto pb-12">
-    <!-- Encabezado con Folio (Header banner) -->
+  <div ref="vistaRef" class="space-y-6">
+    <!-- Header Banner -->
     <div class="rounded-2xl bg-[#403166] dark:bg-[#231A38] px-6 py-6 text-white shadow-iecm-sm flex flex-wrap items-center justify-between gap-6 relative overflow-hidden">
-      <!-- Decoración de fondo -->
-      <div class="absolute right-0 top-0 w-64 h-64 bg-white/5 opacity-20 rounded-full blur-3xl translate-x-1/3 -translate-y-1/3"></div>
-      
+      <div class="absolute right-0 top-0 w-80 h-80 bg-white/5 opacity-20 rounded-full blur-3xl translate-x-1/3 -translate-y-1/3"></div>
+
       <div class="flex items-start gap-4 relative z-10">
         <div class="p-3 bg-white/15 rounded-xl border border-white/20 shadow-sm">
-          <FileText class="w-8 h-8 text-white" />
+          <ClipboardList class="w-8 h-8 text-white" />
         </div>
         <div>
-          <h2 class="text-2xl font-bold tracking-tight text-white">Encuesta de satisfacción</h2>
-          <p class="text-purple-200 text-sm mt-1 max-w-lg">
-            Captura de opiniones de los asistentes al taller o intervención educativa.
+          <div class="flex items-center gap-2">
+            <h2 class="text-2xl font-bold tracking-tight text-white">Módulo de Encuestas de Satisfacción 2027</h2>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-400/20 text-emerald-200 border border-emerald-300/30">
+              Tabla Dinámica Maestro-Detalle (1:N)
+            </span>
+          </div>
+          <p class="text-purple-200 text-sm mt-1 max-w-xl">
+            Visualización jerárquica de todas las encuestas respondidas por los participantes en cada acción educativa. Consulta las respuestas sociodemográficas, la escala Likert y descarga los formatos PDF individuales oficiales.
           </p>
         </div>
       </div>
 
-      <div class="rounded-xl bg-white/15 border border-white/20 px-5 py-3 min-w-[140px] shadow-sm relative z-10">
-        <p class="text-xs uppercase text-purple-200 font-semibold tracking-wider mb-1">Folio Actual</p>
-        <p class="text-2xl font-bold font-mono text-white">{{ form.folio || '—' }}</p>
+      <!-- KPI Pills -->
+      <div class="flex items-center gap-3 relative z-10">
+        <div class="bg-white/10 backdrop-blur-sm px-4 py-2.5 rounded-xl border border-white/15 text-center">
+          <span class="block text-xs uppercase tracking-wider text-purple-200 font-semibold">Total Encuestas</span>
+          <span class="text-xl font-extrabold text-white">{{ metrics.totalEncuestas }}</span>
+        </div>
+        <div class="bg-emerald-500/20 backdrop-blur-sm px-4 py-2.5 rounded-xl border border-emerald-400/30 text-center">
+          <span class="block text-xs uppercase tracking-wider text-emerald-200 font-semibold">Acciones con Encuesta</span>
+          <span class="text-xl font-extrabold text-emerald-300">{{ metrics.accionesConEncuestas }}</span>
+        </div>
       </div>
     </div>
 
-    <form @submit.prevent="onSubmit" class="space-y-6">
-      
-      <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        
-        <!-- Bloque 1: Configuración -->
-        <AppCard>
-          <template #header>
-            <div class="flex items-center gap-2">
-              <Settings class="w-5 h-5 text-iecm-morado dark:text-iecm-morado-400" />
-              <h3 class="font-semibold text-iecm-morado-800 dark:text-iecm-morado-300">1. Datos de la Actividad</h3>
-            </div>
-          </template>
-          
-          <div class="grid gap-4 sm:grid-cols-2">
-            <AppSelect v-model="form.tipo" label="Tipo" required :error="errors.tipo">
-              <option value="" disabled>Selecciona una opción</option>
-              <option value="T">Taller</option>
-              <option value="I">Intervención educativa</option>
-            </AppSelect>
-
-            <AppSelect v-if="form.tipo === 'T'" v-model="form.vertiente" label="Vertiente" required :error="errors.vertiente">
-              <option value="" disabled>Selecciona una vertiente</option>
-              <option v-for="item in vertientes" :key="item.id" :value="item.id">{{ item.label }}</option>
-            </AppSelect>
-
-            <AppSelect v-model="form.curso" :label="form.tipo === 'I' ? 'Intervención' : 'Taller'" required :error="errors.curso" class="sm:col-span-2">
-              <option value="" disabled>{{ loadingCursos ? 'Cargando...' : form.tipo ? 'Selecciona una opción' : 'Selecciona un tipo primero' }}</option>
-              <option v-for="curso in cursos" :key="curso.idcurso" :value="curso.idcurso">{{ curso.descripcion }}</option>
-            </AppSelect>
-
-            <AppInput v-model="form.folio" label="Folio Autogenerado" readonly disabled class="sm:col-span-2" :error="errors.folio" />
+    <!-- Contenedor Maestro -->
+    <AppCard>
+      <template #header>
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4 items-end">
+          <div class="lg:col-span-2">
+            <AppInput
+              v-model="search"
+              placeholder="Buscar por folio, clave de acción, institución..."
+              label="Buscar Acción Educativa"
+            >
+              <template #icon><Search class="w-4 h-4" /></template>
+            </AppInput>
           </div>
-        </AppCard>
 
-        <!-- Bloque 2: Datos Personales -->
-        <AppCard>
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UserCircle class="w-5 h-5 text-iecm-morado dark:text-iecm-morado-400" />
-              <h3 class="font-semibold text-iecm-morado-800 dark:text-iecm-morado-300">2. Perfil del Asistente</h3>
-            </div>
-          </template>
-
-          <div class="space-y-6">
-            <AppInput 
-              v-model="form.edad" 
-              type="number" 
-              min="1" 
-              max="120" 
-              label="P1. Edad" 
-              required 
-              :error="errors.edad" 
-            />
-
-            <div>
-              <label class="label-iecm">P2. Género *</label>
-              <div class="grid grid-cols-3 gap-3 mt-2">
-                <label class="flex items-center justify-center gap-2 p-3 border border-slate-200 dark:border-white/10 rounded-lg cursor-pointer transition-colors hover:border-iecm-morado has-[:checked]:border-iecm-morado has-[:checked]:bg-iecm-morado-50 dark:has-[:checked]:bg-iecm-morado-950/30 has-[:checked]:text-iecm-morado dark:has-[:checked]:text-iecm-morado-400">
-                  <input v-model="form.genero" type="radio" value="2" class="sr-only" /> <!-- 2: Femenino (según uso común IECM o ajustar al legado) -->
-                  <span class="text-sm font-medium">Mujer</span>
-                </label>
-                <label class="flex items-center justify-center gap-2 p-3 border border-slate-200 dark:border-white/10 rounded-lg cursor-pointer transition-colors hover:border-iecm-morado has-[:checked]:border-iecm-morado has-[:checked]:bg-iecm-morado-50 dark:has-[:checked]:bg-iecm-morado-950/30 has-[:checked]:text-iecm-morado dark:has-[:checked]:text-iecm-morado-400">
-                  <input v-model="form.genero" type="radio" value="1" class="sr-only" /> <!-- 1: Masculino -->
-                  <span class="text-sm font-medium">Hombre</span>
-                </label>
-                <label class="flex items-center justify-center gap-2 p-3 border border-slate-200 dark:border-white/10 rounded-lg cursor-pointer transition-colors hover:border-iecm-morado has-[:checked]:border-iecm-morado has-[:checked]:bg-iecm-morado-50 dark:has-[:checked]:bg-iecm-morado-950/30 has-[:checked]:text-iecm-morado dark:has-[:checked]:text-iecm-morado-400">
-                  <input v-model="form.genero" type="radio" value="3" class="sr-only" />
-                  <span class="text-sm font-medium">Otro</span>
-                </label>
-              </div>
-              <p v-if="errors.genero" class="mt-1.5 text-xs text-red-600 font-medium">{{ errors.genero }}</p>
-            </div>
+          <div>
+            <AppSelect v-model="selectedDistrito" label="Distrito">
+              <option value="">Todos los distritos</option>
+              <option v-for="d in 33" :key="d" :value="d">Distrito {{ d }}</option>
+            </AppSelect>
           </div>
-        </AppCard>
 
-      </div>
-
-      <!-- Bloque 3: Cuestionario -->
-      <AppCard>
-        <template #header>
           <div class="flex items-center gap-2">
-            <MessageSquareQuote class="w-5 h-5 text-iecm-morado dark:text-iecm-morado-400" />
-            <h3 class="font-semibold text-iecm-morado-800 dark:text-iecm-morado-300">3. Cuestionario de Satisfacción</h3>
-          </div>
-        </template>
-
-        <div class="space-y-4">
-          <!-- Iterar preguntas para no repetir tanto código HTML -->
-          <div 
-            v-for="(pregunta, index) in [
-              { id: 'etiqueta3', texto: 'P3. La acción educativa cumplió con mis expectativas.' },
-              { id: 'etiqueta4', texto: 'P4. Las personas que impartieron la acción educativa trataron el tema de forma clara.' },
-              { id: 'etiqueta5', texto: 'P5. La temática abordada es aplicable a mi vida personal o laboral.' },
-              { id: 'etiqueta6', texto: 'P6. El formato previsto para el desarrollo de la actividad educativa motiva mi participación.' },
-              { id: 'etiqueta7', texto: 'P7. Las dudas, inquietudes y comentarios fueron atendidos adecuadamente.' },
-              { id: 'etiqueta8', texto: 'P8. ¿Consideras que esta actividad del IECM contribuye a la consolidación de la cultura democrática entre las personas habitantes de la Ciudad de México?', dashed: true }
-            ]" 
-            :key="pregunta.id"
-            :class="[
-              'p-5 rounded-xl border transition-colors',
-              pregunta.dashed ? 'border-dashed border-slate-300 bg-slate-50/50 dark:bg-slate-900/20' : 'border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 hover:border-iecm-morado-200 dark:hover:border-iecm-morado-500/50 hover:bg-iecm-morado-50/30'
-            ]"
-          >
-            <p class="text-sm font-medium text-slate-800 dark:text-slate-200 mb-4">{{ pregunta.texto }} <span class="text-red-500">*</span></p>
-            
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
-              <label 
-                v-for="item in escalaLikert" 
-                :key="`${pregunta.id}-${item.value}`" 
-                class="flex flex-col items-center justify-center p-3 text-center border border-slate-200 dark:border-white/10 rounded-lg cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 has-[:checked]:border-iecm-morado has-[:checked]:bg-iecm-morado-50 dark:has-[:checked]:bg-iecm-morado-950/30 has-[:checked]:shadow-sm"
-              >
-                <input v-model="form[pregunta.id]" type="radio" :value="String(item.value)" class="sr-only" />
-                <div class="w-4 h-4 rounded-full border-2 border-slate-300 mb-2 flex items-center justify-center">
-                  <div class="w-2 h-2 rounded-full bg-iecm-morado opacity-0 transition-opacity" :class="{'opacity-100': form[pregunta.id] === String(item.value)}"></div>
-                </div>
-                <span class="text-[11px] leading-tight font-medium text-slate-600 dark:text-slate-400" :class="{'text-iecm-morado dark:text-iecm-morado-400 font-semibold': form[pregunta.id] === String(item.value)}">{{ item.label }}</span>
-              </label>
-            </div>
-            <p v-if="errors[pregunta.id]" class="mt-2 text-xs text-red-600 font-medium">{{ errors[pregunta.id] }}</p>
+            <AppInput v-model="dateFrom" type="date" label="Desde" class="w-1/2" />
+            <AppInput v-model="dateTo" type="date" label="Hasta" class="w-1/2" />
           </div>
         </div>
+      </template>
 
-        <template #footer>
-          <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p class="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <span class="text-red-500">*</span> Campos obligatorios
-            </p>
-            <AppButton type="submit" variant="primary" size="lg" :loading="saving" class="w-full sm:w-auto min-w-[200px]">
-              <template #icon v-if="!saving"><Save class="w-5 h-5" /></template>
-              Guardar Encuesta
-            </AppButton>
-          </div>
-        </template>
-      </AppCard>
+      <!-- Tabla Maestra Dinámica -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm text-slate-600 dark:text-slate-300">
+          <thead class="bg-slate-50 dark:bg-slate-800/60 text-xs font-bold uppercase text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+              <th class="w-10 px-3 py-3 text-center"></th>
+              <th class="px-4 py-3">Folio Acción</th>
+              <th class="px-4 py-3">Acción Educativa</th>
+              <th class="px-4 py-3">Distrito</th>
+              <th class="px-4 py-3">Institución / Espacio</th>
+              <th class="px-4 py-3">Fecha</th>
+              <th class="px-4 py-3 text-center">Total Encuestas</th>
+              <th class="px-4 py-3 text-center">Acción</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            <template v-for="row in filteredAcciones" :key="row.id_acciones_educativas">
+              <!-- Fila Maestra -->
+              <tr
+                class="hover:bg-purple-50/40 dark:hover:bg-purple-950/20 transition-colors cursor-pointer"
+                :class="{ 'bg-purple-50/60 dark:bg-purple-950/30': expandedRows.has(row.id_acciones_educativas) }"
+                @click="toggleExpand(row)"
+              >
+                <!-- Botón Expandir / Colapsar -->
+                <td class="px-3 py-4 text-center">
+                  <button
+                    class="p-1.5 rounded-lg text-purple-700 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-transform duration-200"
+                    :class="{ 'rotate-90': expandedRows.has(row.id_acciones_educativas) }"
+                  >
+                    <ChevronRight class="w-4 h-4" />
+                  </button>
+                </td>
 
-    </form>
+                <!-- Folio -->
+                <td class="px-4 py-4 font-mono font-bold text-xs text-purple-900 dark:text-purple-300">
+                  {{ row.folio_accion_educativa || `ID-${row.id_acciones_educativas}` }}
+                </td>
+
+                <!-- Acción Educativa -->
+                <td class="px-4 py-4">
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="px-2 py-0.5 rounded text-xs font-bold text-white shadow-xs shrink-0"
+                      :style="{ backgroundColor: row.color || '#6B2D8B' }"
+                    >
+                      {{ row.clave_accion }}
+                    </span>
+                    <span class="font-semibold text-slate-800 dark:text-slate-100 line-clamp-1" :title="row.nombre_accion">
+                      {{ row.nombre_accion }}
+                    </span>
+                  </div>
+                </td>
+
+                <!-- Distrito -->
+                <td class="px-4 py-4">
+                  <span class="px-2 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                    Distrito {{ row.id_distrito || row.distrito || 1 }}
+                  </span>
+                </td>
+
+                <!-- Institución -->
+                <td class="px-4 py-4">
+                  <span class="font-medium text-slate-700 dark:text-slate-300 line-clamp-1" :title="row.nombre_institucion">
+                    {{ row.nombre_institucion }}
+                  </span>
+                </td>
+
+                <!-- Fecha -->
+                <td class="px-4 py-4 whitespace-nowrap text-xs text-slate-500">
+                  {{ String(row.fecha_programada || '').split('T')[0] }}
+                </td>
+
+                <!-- Total de Encuestas -->
+                <td class="px-4 py-4 text-center">
+                  <span
+                    class="px-3 py-1 rounded-full text-xs font-bold shadow-xs inline-flex items-center gap-1"
+                    :class="Number(row.total_encuestas) > 0 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-500'"
+                  >
+                    <CheckCircle2 v-if="Number(row.total_encuestas) > 0" class="w-3.5 h-3.5 text-emerald-600" />
+                    {{ row.total_encuestas || 0 }} encuestas
+                  </span>
+                </td>
+
+                <!-- Botón Desplegar -->
+                <td class="px-4 py-4 text-center">
+                  <AppButton
+                    variant="ghost"
+                    size="sm"
+                    class="text-purple-700 hover:bg-purple-100"
+                    @click.stop="toggleExpand(row)"
+                  >
+                    {{ expandedRows.has(row.id_acciones_educativas) ? 'Ocultar' : 'Ver Respuestas' }}
+                  </AppButton>
+                </td>
+              </tr>
+
+              <!-- Fila Detalle (Desplegable 1:N Encuestas) -->
+              <tr v-if="expandedRows.has(row.id_acciones_educativas)" class="bg-slate-50/80 dark:bg-slate-900/60">
+                <td colspan="8" class="p-4 sm:p-6 border-l-4 border-l-[#6B2D8B]">
+                  <!-- Cargando detalle -->
+                  <div v-if="encuestasCache[row.id_acciones_educativas]?.loading" class="py-6 text-center text-sm text-slate-500">
+                    <RefreshCw class="w-5 h-5 text-purple-600 animate-spin mx-auto mb-2" />
+                    Cargando encuestas registradas para esta acción educativa...
+                  </div>
+
+                  <!-- Sin encuestas -->
+                  <div
+                    v-else-if="!encuestasCache[row.id_acciones_educativas]?.data || encuestasCache[row.id_acciones_educativas]?.data.length === 0"
+                    class="py-6 text-center text-slate-500 text-sm bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700"
+                  >
+                    <AlertCircle class="w-6 h-6 text-amber-500 mx-auto mb-1" />
+                    No hay encuestas individuales registradas todavía para esta acción educativa.
+                  </div>
+
+                  <!-- Listado detallado de encuestas -->
+                  <div v-else class="space-y-4">
+                    <div class="flex items-center justify-between">
+                      <h4 class="text-sm font-bold text-purple-950 dark:text-purple-200 flex items-center gap-2">
+                        <ClipboardList class="w-4 h-4 text-purple-600" />
+                        Encuestas de Satisfacción Registradas ({{ encuestasCache[row.id_acciones_educativas].data.length }})
+                      </h4>
+                      <span class="text-xs text-slate-500">
+                        Cada participante cuenta con su registro individual y folio secuencial.
+                      </span>
+                    </div>
+
+                    <!-- Subtabla de Encuestas -->
+                    <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xs">
+                      <table class="w-full text-left text-xs">
+                        <thead class="bg-purple-100/60 dark:bg-purple-950/40 text-purple-900 dark:text-purple-200 font-bold uppercase border-b border-purple-200 dark:border-purple-800">
+                          <tr>
+                            <th class="px-4 py-2.5">Folio Encuesta</th>
+                            <th class="px-4 py-2.5">Edad</th>
+                            <th class="px-4 py-2.5">Género</th>
+                            <th class="px-3 py-2.5 text-center" title="P3: Claridad temas">P3</th>
+                            <th class="px-3 py-2.5 text-center" title="P4: Facilitador">P4</th>
+                            <th class="px-3 py-2.5 text-center" title="P5: Materiales">P5</th>
+                            <th class="px-3 py-2.5 text-center" title="P6: Utilidad cívica">P6</th>
+                            <th class="px-3 py-2.5 text-center" title="P7: Tiempo asignado">P7</th>
+                            <th class="px-3 py-2.5 text-center" title="P8: Satisfacción general">P8</th>
+                            <th class="px-4 py-2.5 text-center">Formato PDF</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+                          <tr
+                            v-for="encuesta in encuestasCache[row.id_acciones_educativas].data"
+                            :key="encuesta.id_encuestas"
+                            class="hover:bg-slate-50 dark:hover:bg-slate-750"
+                          >
+                            <!-- Folio Encuesta -->
+                            <td class="px-4 py-3 font-mono font-bold text-purple-900 dark:text-purple-300">
+                              {{ encuesta.folio_encuesta }}
+                            </td>
+
+                            <!-- Edad -->
+                            <td class="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200">
+                              {{ encuesta.p1_edad_persona_asistente }} años
+                            </td>
+
+                            <!-- Género -->
+                            <td class="px-4 py-3 text-slate-600 dark:text-slate-300">
+                              {{ encuesta.genero || 'No especificado' }}
+                            </td>
+
+                            <!-- P3 - P8 Respuestas Likert -->
+                            <td class="px-3 py-3 text-center">
+                              <span class="px-2 py-0.5 rounded text-[11px] font-bold border" :class="getLikertBadge(encuesta.p3).class" :title="getLikertBadge(encuesta.p3).text">
+                                {{ encuesta.p3 }}
+                              </span>
+                            </td>
+                            <td class="px-3 py-3 text-center">
+                              <span class="px-2 py-0.5 rounded text-[11px] font-bold border" :class="getLikertBadge(encuesta.p4).class" :title="getLikertBadge(encuesta.p4).text">
+                                {{ encuesta.p4 }}
+                              </span>
+                            </td>
+                            <td class="px-3 py-3 text-center">
+                              <span class="px-2 py-0.5 rounded text-[11px] font-bold border" :class="getLikertBadge(encuesta.p5).class" :title="getLikertBadge(encuesta.p5).text">
+                                {{ encuesta.p5 }}
+                              </span>
+                            </td>
+                            <td class="px-3 py-3 text-center">
+                              <span class="px-2 py-0.5 rounded text-[11px] font-bold border" :class="getLikertBadge(encuesta.p6).class" :title="getLikertBadge(encuesta.p6).text">
+                                {{ encuesta.p6 }}
+                              </span>
+                            </td>
+                            <td class="px-3 py-3 text-center">
+                              <span class="px-2 py-0.5 rounded text-[11px] font-bold border" :class="getLikertBadge(encuesta.p7).class" :title="getLikertBadge(encuesta.p7).text">
+                                {{ encuesta.p7 }}
+                              </span>
+                            </td>
+                            <td class="px-3 py-3 text-center">
+                              <span class="px-2 py-0.5 rounded text-[11px] font-bold border" :class="getLikertBadge(encuesta.p8).class" :title="getLikertBadge(encuesta.p8).text">
+                                {{ encuesta.p8 }}
+                              </span>
+                            </td>
+
+                            <!-- Botón PDF Oficial Limpio -->
+                            <td class="px-4 py-3 text-center">
+                              <AppButton
+                                variant="secondary"
+                                size="sm"
+                                class="text-xs text-purple-700 hover:bg-purple-50 border border-purple-200"
+                                title="Ver / Descargar formato PDF individual limpio"
+                                @click="abrirPdf(row, encuesta)"
+                              >
+                                <template #icon><FileText class="w-3.5 h-3.5 text-purple-600" /></template>
+                                Ver PDF
+                              </AppButton>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <!-- Guía de Preguntas Likert -->
+                    <div class="p-3 bg-purple-50/50 dark:bg-slate-800/80 rounded-lg border border-purple-100 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-400">
+                      <p class="font-bold text-purple-900 dark:text-purple-300 mb-1">Guía del Cuestionario de Satisfacción:</p>
+                      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        <div v-for="q in preguntasInfo" :key="q.key">
+                          <strong class="text-purple-800 dark:text-purple-300">{{ q.key.toUpperCase() }}:</strong> {{ q.text.replace(/^P\d\.\s*/, '') }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </AppCard>
   </div>
 </template>

@@ -13,6 +13,7 @@ import AppBadge from '../../components/ui/AppBadge.vue'
 import AppTable from '../../components/ui/AppTable.vue'
 import AppModal from '../../components/AppModal.vue'
 import ModalHabilitarFechas from '../../components/modals/ModalHabilitarFechas.vue'
+import ModalPermisosUsuario from '../../components/modals/ModalPermisosUsuario.vue'
 
 const authStore = useAuthStore()
 const usuarios = ref([])
@@ -24,6 +25,14 @@ const isEditing = ref(false)
 
 const modalHabilitarOpen = ref(false)
 const selectedUserForHabilitar = ref(null)
+
+const modalPermisosOpen = ref(false)
+const selectedUserForPermisos = ref(null)
+
+const openPermisos = (user) => {
+  selectedUserForPermisos.value = user
+  modalPermisosOpen.value = true
+}
 
 const form = reactive({
   idusuario: null,
@@ -571,6 +580,9 @@ onUnmounted(() => {
                 <button v-if="authStore.isSuperAdmin && row.conectado && row.idusuario !== authStore.user?.idUsuario" @click="forceDisconnect(row)" class="p-1.5 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-lg transition-colors" title="Desconectar Forzosamente">
                   <Zap class="w-4 h-4" />
                 </button>
+                <button v-if="authStore.isSuperAdmin" @click="openPermisos(row)" class="p-1.5 text-iecm-morado-600 dark:text-iecm-morado-400 hover:bg-iecm-morado-50 dark:hover:bg-iecm-morado-950/30 rounded-lg transition-colors" title="Permisos Granulares y Catálogo">
+                  <Shield class="w-4 h-4" />
+                </button>
                 <button v-if="authStore.isSuperAdmin || row.idpermiso !== 3" @click="editUser(row)" class="p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title="Editar">
                   <Edit class="w-4 h-4" />
                 </button>
@@ -591,6 +603,14 @@ onUnmounted(() => {
       :allow-global="false"
       @close="modalHabilitarOpen = false"
       @saved="() => { modalHabilitarOpen = false; loadUsuarios(); }"
+    />
+
+    <!-- Modal Catálogo y Matriz de Permisos Granulares (RBAC 2027) -->
+    <ModalPermisosUsuario
+      :isOpen="modalPermisosOpen"
+      :user="selectedUserForPermisos"
+      @close="modalPermisosOpen = false"
+      @saved="() => { modalPermisosOpen = false; loadUsuarios(); }"
     />
   </div>
 </template>
