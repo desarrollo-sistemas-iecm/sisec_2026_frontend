@@ -73,7 +73,8 @@ const onSubmit = async () => {
             confirmButtonText: 'Entendido'
           })
         }
-        await router.push({ name: 'dashboard' })
+        const userPermiso = Number(data.user?.permiso || data.user?.id_tipousuario || 1)
+        await router.push({ name: userPermiso === 1 ? 'programacion' : 'dashboard' })
       }, 550)
     },
     onError: () => {

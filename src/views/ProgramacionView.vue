@@ -1,7 +1,10 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import Swal from 'sweetalert2'
-import { CalendarPlus, Save, Users, Building2, MapPin, Contact, Clock, AlertCircle, CalendarDays, CheckCircle } from '@lucide/vue'
+import {
+  CalendarPlus, Save, Users, Building2, MapPin, Contact, Clock,
+  AlertCircle, CalendarDays, CheckCircle, Tag, Sparkles
+} from '@lucide/vue'
 import api from '../services/api.js'
 import { useToast } from '../composables/useToast.js'
 import { useGsapAnimations } from '../composables/useGsapAnimations.js'
@@ -19,10 +22,16 @@ const vistaRef = ref(null)
 const loadingCatalogos = ref(false)
 const saving = ref(false)
 
+// Catálogos cargados directamente desde la base de datos operativa sisec_2027_dev
 const catalogos = reactive({
-  cursos: [],
-  tiposPublico: []
+  acciones: [],
+  vertientes: [],
+  demarcaciones: [],
+  tiposInstitucion: []
 })
+
+// Control dinámico de Grupo o Población Atendida
+const hasGrupoPoblacion = ref(false)
 
 const {
   configs,
@@ -37,100 +46,186 @@ const {
   alertPastMonthBlocked
 } = useDateRestrictions()
 
+// Formulario 2027 (4 Secciones Estrictas)
 const form = reactive({
-  convenio: false,
-  tipo: 'taller',
-  vertiente: '',
-  idcatcurso: '',
-  tipo_publico: '',
-  lugar: '',
-  direccion: '',
+  // Sección 1: Acción Educativa
+  con_convenio: false,
+  id_accion: '',
+  vertiente_nombre: '',
+  id_vertiente: '',
+
+  // Sección 2: Ubicación y datos de contacto
+  id_tipo_institucion: '',
+  nombre_institucion: '',
+
+  // Sección 3: Domicilio de la institución o espacio visitado
+  calle_numero: '',
   colonia: '',
+  id_demarcacion: '',
   cp: '',
+  grupo_poblacion_atendida: '',
   nombre_contacto: '',
   telefono_contacto: '',
-  num_personas: '',
+  num_personas_atender: '',
+
+  // Sección 4: Fecha y personal
   fecha_programada: '',
   hora_programada: '',
-  personal_distrito: ''
+  nombre_cargo_persona_atendera: ''
 })
 
-const vertientes = [
-  { id: 3, descripcion: 'Hombres' },
-  { id: 2, descripcion: 'Jovenes' },
-  { id: 1, descripcion: 'Mujeres' },
-  { id: 5, descripcion: 'Poblacion en general' }
-]
+// Reacción cuando se selecciona una Acción Educativa:
+// Se auto-completa la vertiente y su ID automáticamente desde el catálogo
+watch(() => form.id_accion, (newId) => {
+  if (!newId) {
+    form.vertiente_nombre = ''
+    form.id_vertiente = ''
+    return
+  }
+  const found = catalogos.acciones.find(a => String(a.id_accion) === String(newId))
+  if (found) {
+    form.vertiente_nombre = found.vertiente || 'No especificada'
+    form.id_vertiente = found.id_vertiente || 5
+  }
+})
 
-const resetCatalogSelections = () => {
-  form.vertiente = ''
-  form.idcatcurso = ''
-  form.tipo_publico = ''
-}
+// Si se desmarca el checkbox de grupo/población, limpiamos el campo
+watch(hasGrupoPoblacion, (val) => {
+  if (!val) {
+    form.grupo_poblacion_atendida = ''
+  }
+})
 
-const onVertienteChange = () => {
-  form.idcatcurso = ''
-}
+const accionSeleccionadaObj = computed(() => {
+  if (!form.id_accion) return null
+  return catalogos.acciones.find(a => String(a.id_accion) === String(form.id_accion)) || null
+})
 
 const resetForm = () => {
-  form.convenio = false
-  form.tipo = 'taller'
-  form.vertiente = ''
-  form.idcatcurso = ''
-  form.tipo_publico = ''
-  form.lugar = ''
-  form.direccion = ''
+  form.con_convenio = false
+  form.id_accion = ''
+  form.vertiente_nombre = ''
+  form.id_vertiente = ''
+  form.id_tipo_institucion = ''
+  form.nombre_institucion = ''
+  form.calle_numero = ''
   form.colonia = ''
+  form.id_demarcacion = ''
   form.cp = ''
+  hasGrupoPoblacion.value = false
+  form.grupo_poblacion_atendida = ''
   form.nombre_contacto = ''
   form.telefono_contacto = ''
-  form.num_personas = ''
+  form.num_personas_atender = ''
   form.fecha_programada = ''
   form.hora_programada = ''
-  form.personal_distrito = ''
+  form.nombre_cargo_persona_atendera = ''
 }
-
-const normalizeInt = (value) => {
-  if (value === '' || value === null || value === undefined) return null
-  const parsed = Number.parseInt(value, 10)
-  return Number.isNaN(parsed) ? null : parsed
-}
-
-const cursosTaller = computed(() => {
-  const vertiente = normalizeInt(form.vertiente)
-  if (!vertiente) return []
-  return catalogos.cursos.filter((curso) => Number.parseInt(curso.idtipo, 10) === vertiente)
-})
-
-const cursosIntervencion = computed(() =>
-  catalogos.cursos.filter((curso) => Number.parseInt(curso.idtipo, 10) === 4)
-)
 
 const loadCatalogos = async () => {
   loadingCatalogos.value = true
   try {
-    const { data } = await api.get('/reportes/catalogos')
-    const payload = data?.data ?? data ?? {}
-    catalogos.cursos = payload.cursos ?? []
-    catalogos.tiposPublico = payload.tiposPublico ?? []
+    const { data } = await api.get('/programacion-2027/catalogos')
+    const payload = data?.data ?? {}
+    const rawAcciones = payload.acciones ?? []
+
+    catalogos.acciones = rawAcciones.slice().sort((a, b) => {
+      const numA = parseInt(String(a.clave_accion || '').replace(/\D/g, ''), 10) || Number(a.id_accion) || 0
+      const numB = parseInt(String(b.clave_accion || '').replace(/\D/g, ''), 10) || Number(b.id_accion) || 0
+      return numA - numB
+    })
+
+    catalogos.vertientes = payload.vertientes ?? []
+    catalogos.demarcaciones = payload.demarcaciones ?? []
+    catalogos.tiposInstitucion = payload.tiposInstitucion ?? []
   } catch (error) {
-    toast.error('No se pudieron cargar los catálogos. Intenta nuevamente.')
+    console.error('Error al cargar catálogos desde sisec_2027_dev:', error)
+    toast.error('Error al consultar catálogos en la base de datos sisec_2027_dev.')
   } finally {
     loadingCatalogos.value = false
   }
 }
 
-const validate = () => {
-  // Básica validación frontend (además de los 'required' del HTML)
-  if (form.tipo === 'taller' && (!form.vertiente || !form.idcatcurso)) return false
-  if (form.tipo === 'intervencion' && (!form.idcatcurso || !form.tipo_publico)) return false
-  if (!form.lugar || !form.direccion || !form.colonia || !form.cp) return false
-  if (!form.nombre_contacto || !form.telefono_contacto || !form.num_personas) return false
-  if (!form.fecha_programada || !form.hora_programada || !form.personal_distrito) return false
+// ─────────────────────────────────────────────────────────────────────────────
+// VALIDACIÓN ESTRICTA AL 100% CON TOAST
+// ─────────────────────────────────────────────────────────────────────────────
+const validarFormulario = () => {
+  // Sección 1
+  if (!form.id_accion) {
+    toast.warning('Por favor selecciona la Acción Educativa (Sección 1).')
+    return false
+  }
+
+  // Sección 2
+  if (!form.id_tipo_institucion) {
+    toast.warning('Por favor selecciona el Tipo de institución o espacio visitado (Sección 2).')
+    return false
+  }
+  if (!form.nombre_institucion?.trim()) {
+    toast.warning('Por favor ingresa el Nombre de la institución o espacio visitado (Sección 2).')
+    return false
+  }
+
+  // Sección 3
+  if (!form.calle_numero?.trim()) {
+    toast.warning('Por favor ingresa la Calle y número del domicilio (Sección 3).')
+    return false
+  }
+  if (!form.colonia?.trim()) {
+    toast.warning('Por favor ingresa la Colonia del domicilio (Sección 3).')
+    return false
+  }
+  if (!form.id_demarcacion) {
+    toast.warning('Por favor selecciona la Demarcación territorial (Sección 3).')
+    return false
+  }
+  const cleanCp = String(form.cp || '').trim()
+  if (!cleanCp || cleanCp.length !== 5 || isNaN(Number(cleanCp))) {
+    toast.warning('El Código Postal es obligatorio y debe tener exactamente 5 dígitos numéricos.')
+    return false
+  }
+
+  // Campo condicional de grupo o población
+  if (hasGrupoPoblacion.value && !form.grupo_poblacion_atendida?.trim()) {
+    toast.warning('Has marcado "Agregar grupo o población", por favor escribe la descripción de la población atendida.')
+    return false
+  }
+
+  if (!form.nombre_contacto?.trim()) {
+    toast.warning('Por favor ingresa el Nombre del contacto enlace (Sección 3).')
+    return false
+  }
+  if (!form.telefono_contacto?.trim()) {
+    toast.warning('Por favor ingresa el Teléfono de contacto (Sección 3).')
+    return false
+  }
+  const aforo = Number(form.num_personas_atender)
+  if (!form.num_personas_atender || isNaN(aforo) || aforo <= 0 || aforo > 999) {
+    toast.warning('El Número de personas a atender es obligatorio y debe ser de 1 a 3 dígitos (1 - 999).')
+    return false
+  }
+
+  // Sección 4
+  if (!form.fecha_programada) {
+    toast.warning('Por favor ingresa la Fecha programada de la actividad (Sección 4).')
+    return false
+  }
+  if (!form.hora_programada) {
+    toast.warning('Por favor ingresa la Hora programada (HH:MM) (Sección 4).')
+    return false
+  }
+  if (!form.nombre_cargo_persona_atendera?.trim()) {
+    toast.warning('Por favor ingresa el Nombre y cargo de la persona que atenderá el compromiso (Sección 4).')
+    return false
+  }
+
   return true
 }
 
 const onSubmit = async () => {
+  if (!validarFormulario()) return
+
+  // Validación de restricciones de fecha del mes
   if (!isDateEnabled(form.fecha_programada, 'programacion')) {
     if (isGlobalDisabled.value) {
       Swal.fire({
@@ -149,34 +244,37 @@ const onSubmit = async () => {
   saving.value = true
   try {
     const payload = {
-      convenio: form.convenio ? 1 : 0,
-      vertiente: form.tipo === 'taller' ? normalizeInt(form.vertiente) : null,
-      tipo_publico: form.tipo === 'intervencion' ? normalizeInt(form.tipo_publico) : null,
-      idcatcurso: normalizeInt(form.idcatcurso),
-      lugar: form.lugar.trim() || null,
-      direccion: form.direccion.trim() || null,
-      colonia: form.colonia.trim() || null,
-      cp: form.cp.trim() || null,
-      nombre_contacto: form.nombre_contacto.trim() || null,
-      telefono_contacto: form.telefono_contacto.trim() || null,
-      num_personas: normalizeInt(form.num_personas),
-      fecha: form.fecha_programada || null,
-      hora_programada: form.hora_programada || null,
-      personal_distrito: form.personal_distrito.trim() || null
+      con_convenio: !!form.con_convenio,
+      id_accion: Number(form.id_accion),
+      id_vertiente: Number(form.id_vertiente || 5),
+      id_tipo_institucion: Number(form.id_tipo_institucion),
+      nombre_institucion: form.nombre_institucion.trim(),
+      calle_numero: form.calle_numero.trim(),
+      colonia: form.colonia.trim(),
+      id_demarcacion: Number(form.id_demarcacion),
+      cp: String(form.cp).trim(),
+      grupo_poblacion_atendida: hasGrupoPoblacion.value ? form.grupo_poblacion_atendida.trim() : null,
+      nombre_contacto: form.nombre_contacto.trim(),
+      telefono_contacto: form.telefono_contacto.trim(),
+      num_personas_atender: Number(form.num_personas_atender),
+      fecha_programada: form.fecha_programada,
+      hora_programada: form.hora_programada,
+      nombre_cargo_persona_atendera: form.nombre_cargo_persona_atendera.trim()
     }
 
-    await api.post('/programacion', payload)
+    await api.post('/programacion-2027', payload)
     
     await Swal.fire({
       icon: 'success',
-      title: 'Programación guardada',
-      text: 'La actividad fue registrada correctamente.',
+      title: '¡Programación Guardada!',
+      text: 'La acción educativa fue programada correctamente en el calendario institucional.',
       confirmButtonColor: '#6B2D8B',
       customClass: { popup: 'rounded-2xl', confirmButton: 'rounded-lg' }
     })
     resetForm()
   } catch (error) {
-    toast.error('Verifica la información e intenta de nuevo.')
+    const msg = error?.response?.data?.message || 'Ocurrió un error al guardar la programación.'
+    toast.error(msg)
   } finally {
     saving.value = false
   }
@@ -190,10 +288,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <div ref="vistaRef" class="space-y-6 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+  <div ref="vistaRef" class="space-y-6 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
     <!-- Encabezado (Header banner) -->
     <div class="rounded-2xl bg-[#403166] dark:bg-[#231A38] px-6 py-6 text-white shadow-iecm-sm flex flex-wrap items-center justify-between gap-6 relative overflow-hidden">
-      <!-- Decoración de fondo -->
       <div class="absolute right-0 top-0 w-64 h-64 bg-white/5 opacity-20 rounded-full blur-3xl translate-x-1/3 -translate-y-1/3"></div>
       
       <div class="flex items-start gap-4 relative z-10">
@@ -201,17 +298,21 @@ onMounted(() => {
           <CalendarPlus class="w-8 h-8 text-white" />
         </div>
         <div>
-          <h2 class="text-2xl font-bold tracking-tight text-white">Programación de Actividad</h2>
-          <p class="text-purple-200 text-sm mt-1 max-w-lg">
-            Registra un nuevo taller o intervención educativa en el calendario.
+          <div class="flex items-center gap-2">
+            <h2 class="text-2xl font-bold tracking-tight text-white">Programación de Acción Educativa</h2>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
+              Modelo 2027
+            </span>
+          </div>
+          <p class="text-purple-200 text-sm mt-1 max-w-xl">
+            Registra una nueva acción educativa en el calendario institucional. Completa las 4 secciones obligatorias.
           </p>
         </div>
       </div>
     </div>
 
-    <!-- Alerta de Restricciones Inteligente (Mes Vigente y Excepciones) -->
+    <!-- Alertas de Restricciones de Fecha -->
     <div v-if="!loadingConfig" class="w-full">
-      <!-- Caso 1: Sistema cerrado globalmente -->
       <div v-if="isGlobalDisabled" class="bg-red-50 dark:bg-red-950/30 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
         <div class="flex items-center gap-3">
           <AlertCircle class="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
@@ -221,22 +322,20 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Caso 2: Excepción específica de distrito activa -->
       <div v-else-if="activeDistrictException" class="bg-amber-50 dark:bg-amber-950/30 border-l-4 border-amber-500 p-4 rounded-r-lg shadow-sm">
         <div class="flex items-center gap-3">
-          <CalendarClock class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <Clock class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
           <p class="text-sm text-slate-900 dark:text-amber-100">
-            <strong class="font-bold text-amber-900 dark:text-amber-300">Habilitación especial activa:</strong> Tu distrito cuenta con periodo autorizado para programar actividades del <strong class="font-semibold text-slate-900 dark:text-white">{{ activeDistrictException.fecha_inicio }}</strong> al <strong class="font-semibold text-slate-900 dark:text-white">{{ activeDistrictException.fecha_fin }}</strong>.
+            <strong class="font-bold text-amber-900 dark:text-amber-300">Habilitación especial activa:</strong> Tu distrito cuenta con periodo autorizado para programar del <strong class="font-semibold text-slate-900 dark:text-white">{{ activeDistrictException.fecha_inicio }}</strong> al <strong class="font-semibold text-slate-900 dark:text-white">{{ activeDistrictException.fecha_fin }}</strong>.
           </p>
         </div>
       </div>
 
-      <!-- Caso 3: Operación regular en Mes Vigente -->
       <div v-else class="bg-emerald-50 dark:bg-emerald-950/30 border-l-4 border-emerald-500 p-4 rounded-r-lg shadow-sm">
         <div class="flex items-center gap-3">
           <CalendarDays class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
           <p class="text-sm text-slate-900 dark:text-emerald-100">
-            <strong class="font-bold text-emerald-900 dark:text-emerald-300">Mes vigente habilitado:</strong> Puedes programar actividades para <strong class="font-semibold text-slate-900 dark:text-white">{{ currentMonthName }} {{ currentYear }}</strong>. Las actividades para meses anteriores requieren habilitación del Super Administrador.
+            <strong class="font-bold text-emerald-900 dark:text-emerald-300">Mes vigente habilitado:</strong> Programando para <strong class="font-semibold text-slate-900 dark:text-white">{{ currentMonthName }} {{ currentYear }}</strong>.
           </p>
         </div>
       </div>
@@ -244,276 +343,325 @@ onMounted(() => {
 
     <form @submit.prevent="onSubmit" class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       
-      <!-- Zona Principal: Secciones del Formulario (col-span-8) -->
+      <!-- Zona Principal: Las 4 Secciones Requeridas (col-span-8) -->
       <div class="lg:col-span-8 space-y-6">
 
-        <!-- Sección 1: Tipo de Actividad -->
+        <!-- SECCIÓN 1: ACCIÓN EDUCATIVA -->
         <AppCard>
           <template #header>
             <div class="flex items-center gap-2">
-              <Building2 class="w-5 h-5 text-purple-200 dark:text-iecm-morado-400" />
-              <h3 class="font-semibold text-white dark:text-iecm-morado-300">1. Tipo de Actividad</h3>
+              <Sparkles class="w-5 h-5 text-purple-200 dark:text-iecm-morado-400" />
+              <h3 class="font-semibold text-white dark:text-iecm-morado-300">1. Acción Educativa</h3>
             </div>
           </template>
           
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-5">
-            <!-- Convenio (fila completa) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+            <!-- Checkbox de Convenio (fila completa) -->
             <div class="col-span-full">
               <label class="flex items-center gap-3 p-4 bg-iecm-gris dark:bg-iecm-dark-header border border-iecm-gris-200 dark:border-iecm-dark-border rounded-xl cursor-pointer hover:border-iecm-morado transition-colors">
                 <div class="relative flex items-center justify-center">
-                  <input v-model="form.convenio" type="checkbox" class="peer sr-only" />
+                  <input v-model="form.con_convenio" type="checkbox" class="peer sr-only" />
                   <div class="w-5 h-5 rounded border-2 border-slate-300 peer-checked:border-iecm-morado peer-checked:bg-iecm-morado transition-all"></div>
                   <div class="absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 transition-opacity">
                     <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
                   </div>
                 </div>
-                <span class="font-medium text-iecm-texto dark:text-iecm-dark-text">Se realiza mediante Convenio con delegación</span>
+                <div>
+                  <span class="font-medium text-iecm-texto dark:text-iecm-dark-text block">¿Es con convenio?</span>
+                  <span class="text-xs text-slate-500 dark:text-slate-400">Marca esta casilla si la acción deriva de un convenio institucional formal.</span>
+                </div>
               </label>
             </div>
 
-            <!-- Tipo -->
-            <div class="col-span-1">
-              <AppSelect v-model="form.tipo" label="Tipo" required @change="resetCatalogSelections">
-                <option value="taller">Taller</option>
-                <option value="intervencion">Intervención educativa</option>
+            <!-- Nombre de la Acción Educativa (Select del nuevo catálogo Clave + Nombre) -->
+            <div class="col-span-full">
+              <AppSelect v-model="form.id_accion" label="Nombre de la acción educativa" required>
+                <option value="" disabled>{{ loadingCatalogos ? 'Cargando acciones...' : 'Selecciona una acción educativa del catálogo' }}</option>
+                <option v-for="accion in catalogos.acciones" :key="accion.id_accion" :value="accion.id_accion">
+                  {{ accion.clave_accion }} — {{ accion.nombre_accion }}
+                </option>
               </AppSelect>
             </div>
 
-            <!-- Caso Taller -->
-            <template v-if="form.tipo === 'taller'">
-              <div class="col-span-1">
-                <AppSelect v-model="form.vertiente" label="Vertiente" required @change="onVertienteChange">
-                  <option value="" disabled>Selecciona una vertiente</option>
-                  <option v-for="item in vertientes" :key="item.id" :value="item.id">{{ item.descripcion }}</option>
-                </AppSelect>
+            <!-- Vertiente (Input Deshabilitado Autocompletado) -->
+            <div class="col-span-full md:col-span-2">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                Vertiente Institucional (Auto-completada)
+              </label>
+              <div class="relative">
+                <input
+                  type="text"
+                  :value="form.vertiente_nombre || 'Se auto-completará al seleccionar la acción educativa'"
+                  disabled
+                  class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 text-sm font-medium cursor-not-allowed select-none"
+                />
+                <div class="absolute right-3.5 top-1/2 -translate-y-1/2">
+                  <Tag class="w-4 h-4 text-slate-400" />
+                </div>
               </div>
-
-              <div class="col-span-full xl:col-span-3">
-                <AppSelect v-model="form.idcatcurso" label="Taller" required>
-                  <option value="" disabled>{{ form.vertiente ? 'Selecciona un taller' : 'Selecciona una vertiente primero' }}</option>
-                  <option v-for="curso in cursosTaller" :key="curso.idcurso" :value="curso.idcurso">{{ curso.descripcion }}</option>
-                </AppSelect>
-              </div>
-            </template>
-
-            <!-- Caso Intervención Educativa -->
-            <template v-if="form.tipo === 'intervencion'">
-              <div class="col-span-1 md:col-span-2 xl:col-span-2">
-                <AppSelect v-model="form.idcatcurso" label="Intervención Educativa" required>
-                  <option value="" disabled>{{ loadingCatalogos ? 'Cargando...' : 'Selecciona una intervención' }}</option>
-                  <option v-for="curso in cursosIntervencion" :key="curso.idcurso" :value="curso.idcurso">{{ curso.descripcion }}</option>
-                </AppSelect>
-              </div>
-
-              <div class="col-span-1">
-                <AppSelect v-model="form.tipo_publico" label="Tipo de público" required>
-                  <option value="" disabled>{{ loadingCatalogos ? 'Cargando...' : 'Selecciona el público' }}</option>
-                  <option v-for="item in catalogos.tiposPublico" :key="item.idtipopublico ?? item.id" :value="item.idtipopublico ?? item.id">{{ item.descripcion }}</option>
-                </AppSelect>
-              </div>
-            </template>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                La vertiente queda estrictamente vinculada por sistema al ID de la acción educativa.
+              </p>
+            </div>
           </div>
         </AppCard>
 
-        <!-- Sección 2: Ubicación y Contacto -->
+        <!-- SECCIÓN 2: UBICACIÓN Y DATOS DE CONTACTO -->
         <AppCard>
           <template #header>
             <div class="flex items-center gap-2">
-              <MapPin class="w-5 h-5 text-purple-200 dark:text-iecm-morado-400" />
+              <Building2 class="w-5 h-5 text-purple-200 dark:text-iecm-morado-400" />
               <h3 class="font-semibold text-white dark:text-iecm-morado-300">2. Ubicación y Datos de Contacto</h3>
             </div>
           </template>
           
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-5">
-            <!-- Institución / Lugar (fila completa) -->
-            <div class="col-span-full">
-              <AppInput v-model="form.lugar" label="Nombre de la Institución / Lugar" required />
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+            <!-- Tipo de Institución / Espacio Visitado (Select Catálogo) -->
+            <div class="col-span-1">
+              <AppSelect v-model="form.id_tipo_institucion" label="Tipo de institución o espacio visitado *" required>
+                <option value="" disabled>Selecciona el tipo de espacio</option>
+                <option v-for="tipo in catalogos.tiposInstitucion" :key="tipo.id_tipo_institucion" :value="tipo.id_tipo_institucion">
+                  {{ tipo.descripcion }}
+                </option>
+              </AppSelect>
             </div>
 
-            <!-- Calle y número (2 columnas) -->
-            <div class="col-span-1 md:col-span-2 xl:col-span-2">
-              <AppInput v-model="form.direccion" label="Calle y número" required />
+            <!-- Nombre de la Institución / Lugar (Input Texto Normal) -->
+            <div class="col-span-1">
+              <AppInput v-model="form.nombre_institucion" label="Nombre de la institución / lugar *" required placeholder="Ej. Escuela Primaria Benito Juárez" />
+            </div>
+          </div>
+        </AppCard>
+
+        <!-- SECCIÓN 3: DOMICILIO DE LA INSTITUCIÓN O ESPACIO VISITADO -->
+        <AppCard>
+          <template #header>
+            <div class="flex items-center gap-2">
+              <MapPin class="w-5 h-5 text-purple-200 dark:text-iecm-morado-400" />
+              <h3 class="font-semibold text-white dark:text-iecm-morado-300">3. Domicilio de la Institución o Espacio Visitado</h3>
+            </div>
+          </template>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-5">
+            <!-- Calle y número -->
+            <div class="col-span-1 md:col-span-2">
+              <AppInput v-model="form.calle_numero" label="Calle y número *" required placeholder="Ej. Av. Insurgentes Sur 123" />
             </div>
 
             <!-- Colonia -->
             <div class="col-span-1">
-              <AppInput v-model="form.colonia" label="Colonia" required />
+              <AppInput v-model="form.colonia" label="Colonia *" required placeholder="Ej. Del Valle" />
             </div>
 
-            <!-- Código Postal -->
+            <!-- Demarcación Territorial (Select Catálogo 16 Alcaldías) -->
+            <div class="col-span-1 md:col-span-2">
+              <AppSelect v-model="form.id_demarcacion" label="Demarcación territorial (Alcaldía) *" required>
+                <option value="" disabled>Selecciona la alcaldía</option>
+                <option v-for="dem in catalogos.demarcaciones" :key="dem.id_demarcacion" :value="dem.id_demarcacion">
+                  {{ dem.demarcacion }}
+                </option>
+              </AppSelect>
+            </div>
+
+            <!-- Código Postal (5 dígitos) -->
             <div class="col-span-1">
-              <AppInput v-model="form.cp" label="Código Postal" maxlength="6" required />
+              <AppInput v-model="form.cp" label="Código Postal (5 dígitos) *" maxlength="5" required placeholder="03100" />
             </div>
 
-            <!-- Subtítulo / Separador Contacto -->
-            <div class="col-span-full border-t border-slate-100 dark:border-white/5 pt-3 mt-1">
+            <!-- Checkbox Dinámico: Agregar grupo o población atendida -->
+            <div class="col-span-full border-t border-slate-100 dark:border-white/5 pt-4">
+              <label class="flex items-center gap-3 p-3.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-xl cursor-pointer hover:border-iecm-morado transition-colors">
+                <div class="relative flex items-center justify-center">
+                  <input v-model="hasGrupoPoblacion" type="checkbox" class="peer sr-only" />
+                  <div class="w-5 h-5 rounded border-2 border-slate-300 peer-checked:border-iecm-morado peer-checked:bg-iecm-morado transition-all"></div>
+                  <div class="absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 transition-opacity">
+                    <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                  </div>
+                </div>
+                <div class="text-sm">
+                  <span class="font-semibold text-slate-800 dark:text-slate-200">Agregar grupo o población atendida</span>
+                  <span class="text-xs text-slate-500 dark:text-slate-400 block">Marca si deseas especificar características del grupo (ej. personas con discapacidad, adultos mayores, comunidad escolar).</span>
+                </div>
+              </label>
+            </div>
+
+            <!-- Input Desplegable Condicional: Grupo o población atendida -->
+            <div v-if="hasGrupoPoblacion" class="col-span-full bg-purple-50/50 dark:bg-iecm-morado-950/20 p-4 rounded-xl border border-iecm-morado/20 space-y-1">
+              <AppInput
+                v-model="form.grupo_poblacion_atendida"
+                label="Campo descriptivo de grupo o población atendida *"
+                required
+                placeholder="Escribe la descripción de la población o grupo..."
+              />
+              <p class="text-[11px] text-iecm-morado dark:text-iecm-morado-300 font-medium">
+                * Campo obligatorio al haber seleccionado "Agregar grupo o población".
+              </p>
+            </div>
+
+            <!-- Separador Enlace y Aforo -->
+            <div class="col-span-full border-t border-slate-100 dark:border-white/5 pt-3">
               <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 <Contact class="w-4 h-4 text-iecm-morado dark:text-iecm-morado-400" />
-                <span>Datos del Contacto y Aforo</span>
+                <span>Datos de Enlace y Aforo Estimado</span>
               </div>
             </div>
 
             <!-- Nombre de contacto -->
             <div class="col-span-1 md:col-span-2 xl:col-span-1">
-              <AppInput v-model="form.nombre_contacto" label="Nombre del Contacto" required>
-                <template #icon><Contact class="w-4 h-4" /></template>
-              </AppInput>
+              <AppInput v-model="form.nombre_contacto" label="Nombre de contacto *" required placeholder="Nombre completo" />
             </div>
 
             <!-- Teléfono de contacto -->
             <div class="col-span-1">
-              <AppInput v-model="form.telefono_contacto" label="Teléfono de Contacto" required />
+              <AppInput v-model="form.telefono_contacto" label="Teléfono de contacto *" required placeholder="10 dígitos" />
             </div>
 
-            <!-- Número estimado de personas -->
+            <!-- Número de personas a atender (máx 3 dígitos) -->
             <div class="col-span-1">
-              <AppInput v-model="form.num_personas" type="number" min="1" label="Núm. estimado de personas a atender" required>
-                <template #icon><Users class="w-4 h-4" /></template>
-              </AppInput>
+              <AppInput 
+                v-model="form.num_personas_atender" 
+                type="number" 
+                min="1" 
+                max="999" 
+                label="Núm. personas a atender (1-3 dígitos) *" 
+                required 
+                placeholder="Ej. 45" 
+              />
             </div>
           </div>
         </AppCard>
 
-        <!-- Sección 3: Programación -->
+        <!-- SECCIÓN 4: FECHA Y PERSONAL -->
         <AppCard>
           <template #header>
             <div class="flex items-center gap-2">
               <Clock class="w-5 h-5 text-purple-200 dark:text-iecm-morado-400" />
-              <h3 class="font-semibold text-white dark:text-iecm-morado-300">3. Fecha y Personal</h3>
+              <h3 class="font-semibold text-white dark:text-iecm-morado-300">4. Fecha y Personal</h3>
             </div>
           </template>
           
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-5">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
             <!-- Fecha programada -->
             <div class="col-span-1">
               <AppInput 
                 v-model="form.fecha_programada" 
                 type="date" 
-                label="Fecha programada" 
+                label="Fecha programada (día/mes/año) *" 
                 required 
               />
             </div>
 
             <!-- Hora programada -->
             <div class="col-span-1">
-              <AppInput v-model="form.hora_programada" type="time" label="Hora programada" required />
+              <AppInput 
+                v-model="form.hora_programada" 
+                type="time" 
+                label="Hora programada (HH:MM) *" 
+                required 
+              />
             </div>
 
-            <!-- Tip de ayuda en xl -->
-            <div class="hidden xl:flex items-center p-3 bg-purple-50/60 dark:bg-iecm-morado-950/20 rounded-xl border border-iecm-morado/15 text-xs text-slate-600 dark:text-slate-400 gap-2.5">
-              <Clock class="w-4 h-4 text-iecm-morado dark:text-iecm-morado-400 shrink-0" />
-              <span>Horario de programación según disponibilidad del personal distrital.</span>
-            </div>
-            
-            <!-- Personal del distrito (fila completa) -->
+            <!-- Nombre y cargo del personal -->
             <div class="col-span-full">
-              <label class="label-iecm">Nombre de las personas que atenderán el compromiso (Órgano Desconcentrado) *</label>
-              <textarea
-                v-model="form.personal_distrito"
-                rows="3"
+              <AppInput
+                v-model="form.nombre_cargo_persona_atendera"
+                label="Nombre y cargo de la persona que atenderá el compromiso *"
                 required
-                class="input-iecm resize-y"
-                placeholder="Escribe los nombres aquí..."
-              ></textarea>
+                placeholder="Ej. Lic. Ana Morales - Coordinadora Distrital de Participación"
+              />
             </div>
           </div>
         </AppCard>
 
       </div>
 
-      <!-- Zona Lateral: Panel Sticky de Resumen y Acciones (col-span-4) -->
+      <!-- Zona Lateral: Resumen Reactivo y Guardado (col-span-4) -->
       <aside class="lg:col-span-4 space-y-6 lg:sticky lg:top-6">
-        <!-- Tarjeta de Resumen -->
         <AppCard>
           <template #header>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <Clock class="w-5 h-5 text-purple-200 dark:text-iecm-morado-400" />
-                <h3 class="font-semibold text-white">Resumen de Actividad</h3>
+                <h3 class="font-semibold text-white">Resumen Reactivo</h3>
               </div>
-              <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white/20 text-white border border-white/20">
-                {{ form.tipo === 'taller' ? 'Taller' : 'Intervención' }}
+              <span 
+                v-if="accionSeleccionadaObj" 
+                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-sm"
+                :style="{ backgroundColor: accionSeleccionadaObj.color || '#6B2D8B' }"
+              >
+                {{ accionSeleccionadaObj.clave_accion }}
               </span>
             </div>
           </template>
 
           <div class="space-y-4 text-sm">
-            <!-- Badge Convenio si aplica -->
-            <div v-if="form.convenio" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40 w-full">
-              <CheckCircle class="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>Mediante Convenio con delegación</span>
+            <!-- Convenio Badge -->
+            <div v-if="form.con_convenio" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40">
+              <CheckCircle class="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Con Convenio Delegacional</span>
             </div>
 
-            <!-- Taller / Intervención Seleccionada -->
-            <div class="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-white/5 space-y-1">
-              <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                {{ form.tipo === 'taller' ? 'Taller seleccionado' : 'Intervención seleccionada' }}
+            <!-- Acción Educativa Detalle -->
+            <div class="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-white/5 space-y-1.5">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Acción Educativa
               </span>
-              <p class="font-semibold text-slate-900 dark:text-white text-xs leading-relaxed">
-                <template v-if="form.tipo === 'taller'">
-                  {{ cursosTaller.find(c => c.idcurso === normalizeInt(form.idcatcurso))?.descripcion || 'Selecciona vertiente y taller' }}
-                </template>
-                <template v-else>
-                  {{ cursosIntervencion.find(c => c.idcurso === normalizeInt(form.idcatcurso))?.descripcion || 'Selecciona una intervención' }}
-                </template>
+              <p class="font-bold text-slate-900 dark:text-white text-xs leading-snug">
+                {{ accionSeleccionadaObj?.nombre_accion || 'Selecciona una acción educativa' }}
               </p>
-              <p v-if="form.tipo === 'taller' && form.vertiente" class="text-[11px] text-iecm-morado dark:text-iecm-morado-300 font-medium">
-                Vertiente: {{ vertientes.find(v => v.id === normalizeInt(form.vertiente))?.descripcion || '' }}
-              </p>
-              <p v-else-if="form.tipo === 'intervencion' && form.tipo_publico" class="text-[11px] text-iecm-morado dark:text-iecm-morado-300 font-medium">
-                Público: {{ catalogos.tiposPublico.find(tp => (tp.idtipopublico ?? tp.id) === normalizeInt(form.tipo_publico))?.descripcion || '' }}
-              </p>
+              <div v-if="form.vertiente_nombre" class="flex items-center gap-1.5 text-xs text-iecm-morado dark:text-iecm-morado-300 font-semibold pt-1">
+                <Tag class="w-3.5 h-3.5" />
+                <span>Vertiente: {{ form.vertiente_nombre }}</span>
+              </div>
             </div>
 
-            <!-- Ubicación y Lugar -->
+            <!-- Ubicación -->
             <div class="space-y-1">
-              <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
                 <MapPin class="w-3.5 h-3.5 text-slate-400" />
-                Sede / Ubicación
+                Ubicación y Sede
               </span>
-              <p class="font-medium text-slate-800 dark:text-slate-200 text-xs">
-                {{ form.lugar || 'Institución no definida' }}
+              <p class="font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                {{ form.nombre_institucion || 'Institución no definida' }}
               </p>
-              <p v-if="form.direccion || form.colonia" class="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {{ [form.direccion, form.colonia, form.cp ? 'CP ' + form.cp : ''].filter(Boolean).join(', ') }}
+              <p v-if="form.calle_numero || form.colonia" class="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                {{ [form.calle_numero, form.colonia, form.cp ? 'CP ' + form.cp : ''].filter(Boolean).join(', ') }}
               </p>
             </div>
 
             <!-- Fecha y Hora -->
             <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
               <div>
-                <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                  <CalendarDays class="w-3.5 h-3.5 text-slate-400" />
-                  Fecha
+                <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <CalendarDays class="w-3.5 h-3.5 text-slate-400" /> Fecha
                 </span>
-                <p class="font-semibold text-slate-900 dark:text-white text-xs mt-0.5">
+                <p class="font-bold text-slate-900 dark:text-white text-xs mt-0.5">
                   {{ form.fecha_programada || 'Pendiente' }}
                 </p>
               </div>
               <div>
-                <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                  <Clock class="w-3.5 h-3.5 text-slate-400" />
-                  Hora
+                <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <Clock class="w-3.5 h-3.5 text-slate-400" /> Hora
                 </span>
-                <p class="font-semibold text-slate-900 dark:text-white text-xs mt-0.5">
+                <p class="font-bold text-slate-900 dark:text-white text-xs mt-0.5">
                   {{ form.hora_programada || 'Pendiente' }}
                 </p>
               </div>
             </div>
 
-            <!-- Personas estimadas y Contacto -->
-            <div v-if="form.num_personas || form.nombre_contacto" class="pt-2 border-t border-slate-100 dark:border-white/5 space-y-1.5">
-              <div v-if="form.num_personas" class="flex items-center justify-between text-xs">
+            <!-- Aforo y Personal -->
+            <div v-if="form.num_personas_atender || form.nombre_cargo_persona_atendera" class="pt-2 border-t border-slate-100 dark:border-white/5 space-y-1.5">
+              <div v-if="form.num_personas_atender" class="flex items-center justify-between text-xs">
                 <span class="text-slate-500 dark:text-slate-400 flex items-center gap-1">
                   <Users class="w-3.5 h-3.5 text-slate-400" /> Aforo estimado:
                 </span>
-                <span class="font-semibold text-slate-800 dark:text-slate-200">{{ form.num_personas }} personas</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200">{{ form.num_personas_atender }} personas</span>
               </div>
-              <div v-if="form.nombre_contacto" class="flex items-center justify-between text-xs">
+              <div v-if="form.nombre_cargo_persona_atendera" class="space-y-0.5 text-xs">
                 <span class="text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                  <Contact class="w-3.5 h-3.5 text-slate-400" /> Contacto:
+                  <Contact class="w-3.5 h-3.5 text-slate-400" /> Atenderá:
                 </span>
-                <span class="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[140px]">{{ form.nombre_contacto }}</span>
+                <p class="font-medium text-slate-800 dark:text-slate-200 truncate">{{ form.nombre_cargo_persona_atendera }}</p>
               </div>
             </div>
 
@@ -540,14 +688,14 @@ onMounted(() => {
           </div>
         </AppCard>
 
-        <!-- Indicador de Mes Vigente / Ayuda -->
+        <!-- Indicador de Mes Vigente -->
         <div class="p-4 bg-purple-50/70 dark:bg-iecm-morado-950/20 border border-iecm-morado/20 rounded-2xl text-xs text-slate-600 dark:text-slate-300 space-y-2">
           <div class="flex items-center gap-2 text-iecm-morado dark:text-iecm-morado-300 font-semibold">
             <CalendarDays class="w-4 h-4 shrink-0" />
-            <span>Programación en Mes Vigente</span>
+            <span>Validación Estricta al 100%</span>
           </div>
           <p class="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-            El sistema registra automáticamente la fecha de alta institucional. Verifica que todos los datos y la disponibilidad sean correctos antes de enviar.
+            Todos los campos del formulario son estrictamente obligatorios para garantizar la integridad institucional del SISEC 2027.
           </p>
         </div>
       </aside>

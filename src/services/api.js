@@ -1,8 +1,21 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore.js'
 
+const resolveBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    if (isLocalhost) {
+      if (window.location.port === '5173') {
+        return '/api'
+      }
+      return 'http://localhost:3013/api'
+    }
+  }
+  return import.meta.env.VITE_API_URL || '/api'
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL
+  baseURL: resolveBaseUrl()
 })
 
 api.interceptors.request.use((config) => {
