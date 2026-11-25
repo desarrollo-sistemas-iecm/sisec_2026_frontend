@@ -33,7 +33,8 @@ const routes = [
       { path: 'archivos', name: 'admin-archivos', component: () => import('../views/admin/ArchivosView.vue'), meta: { roles: [2, 3] } },
       { path: 'formatos', name: 'admin-formatos', component: () => import('../views/admin/FormatosView.vue'), meta: { roles: [3] } },
       { path: 'cursos', name: 'admin-cursos', component: () => import('../views/admin/CursosView.vue'), meta: { roles: [2, 3] } },
-      { path: 'mensajes', name: 'admin-mensajes', component: () => import('../views/admin/MensajesPredeterminadosView.vue'), meta: { roles: [3] } }
+      { path: 'mensajes', name: 'admin-mensajes', component: () => import('../views/admin/MensajesPredeterminadosView.vue'), meta: { roles: [3] } },
+      { path: 'telegram', name: 'admin-telegram', component: () => import('../views/admin/TelegramConfigView.vue'), meta: { roles: [3] } }
     ]
   }
 ]
@@ -64,7 +65,8 @@ const routeToModuleMap = {
   'admin-archivos': 'administracion',
   'admin-formatos': 'administracion',
   'admin-cursos': 'administracion',
-  'admin-mensajes': 'administracion'
+  'admin-mensajes': 'administracion',
+  'admin-telegram': 'administracion'
 }
 
 router.beforeEach((to) => {
