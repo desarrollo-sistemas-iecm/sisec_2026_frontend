@@ -78,7 +78,7 @@ const handleBackdropClick = () => {
         @click.self="handleBackdropClick"
       >
         <div
-          class="modal-crystal w-full flex flex-col rounded-3xl overflow-hidden my-auto max-h-[92vh] transition-all relative"
+          class="modal-crystal w-full flex flex-col rounded-3xl overflow-hidden my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3rem)] transition-all relative"
           :class="computedMaxWidth"
         >
           <!-- Borde biselado superior sutil de cristal líquido -->

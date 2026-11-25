@@ -2,6 +2,10 @@ import axios from 'axios'
 import { useAuthStore } from '../stores/authStore.js'
 
 const resolveBaseUrl = () => {
+  const envApi = import.meta.env.VITE_API_URL
+  if (envApi && envApi.trim() !== '') {
+    return envApi
+  }
   if (typeof window !== 'undefined') {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     if (isLocalhost) {
@@ -11,7 +15,7 @@ const resolveBaseUrl = () => {
       return 'http://localhost:3013/api'
     }
   }
-  return import.meta.env.VITE_API_URL || '/api'
+  return '/api'
 }
 
 const api = axios.create({
@@ -33,9 +37,10 @@ api.interceptors.response.use(
       const authStore = useAuthStore()
       authStore.logout()
       
-      // Si no estamos ya en la página de login, redirigir
+      // Si no estamos ya en la página de login, redirigir respetando la ruta base
       if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login'
+        const loginUrl = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '') + '/login'
+        window.location.href = loginUrl
       }
     }
     return Promise.reject(error)

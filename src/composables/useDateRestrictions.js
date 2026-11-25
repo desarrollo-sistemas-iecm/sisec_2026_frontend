@@ -80,7 +80,7 @@ export function useDateRestrictions() {
    */
   const getCoveringException = (dateStr, modulo = 'captura', rowSede = null) => {
     if (!dateStr || !configs.value.length) return null
-    const userSede = rowSede !== null && rowSede !== undefined ? Number(rowSede) : Number(authStore.user?.idsede || 0)
+    const userSede = rowSede !== null && rowSede !== undefined ? Number(rowSede) : Number(authStore.user?.idsede ?? authStore.user?.id_distrito ?? 0)
     const today = new Date().toISOString().slice(0, 10)
 
     const list = configs.value.filter(c => (c.modulo === modulo || c.modulo === 'ambos') && c.habilitado)
@@ -115,7 +115,7 @@ export function useDateRestrictions() {
    * Comprueba si el distrito tiene una excepción activa
    */
   const activeDistrictException = computed(() => {
-    const userSede = Number(authStore.user?.idsede || 0)
+    const userSede = Number(authStore.user?.idsede ?? authStore.user?.id_distrito ?? 0)
     if (!userSede) return null
     const today = new Date().toISOString().slice(0, 10)
     return configs.value.find(c => Number(c.idsede) === userSede && c.habilitado && (!c.fecha_limite || today <= c.fecha_limite))

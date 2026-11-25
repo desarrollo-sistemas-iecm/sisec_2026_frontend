@@ -310,7 +310,7 @@ watch(
 
 <template>
   <AppModal :open="props.open" title="" maxWidth="max-w-6xl" @close="onClose">
-    <div class="max-h-[85vh] overflow-y-auto px-1 pb-4 scrollbar-thin scrollbar-thumb-iecm-morado-200">
+    <div class="px-1 pb-4">
       <div class="space-y-8">
         
         <!-- Header Moderno y Neutral -->

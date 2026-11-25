@@ -222,7 +222,7 @@ const guardarEncuesta = async () => {
       </div>
     </template>
 
-    <div class="space-y-6 max-h-[75vh] overflow-y-auto px-1 pr-2">
+    <div class="space-y-6">
       
       <!-- ALERTA SI NO TIENE FOLIO VÁLIDO -->
       <div v-if="!tieneFolioValido" class="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-3">
