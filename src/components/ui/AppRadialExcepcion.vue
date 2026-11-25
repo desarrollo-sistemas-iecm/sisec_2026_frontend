@@ -1,11 +1,15 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useAuthStore } from '../../stores/authStore.js'
+import { useThemeStore } from '../../stores/themeStore.js'
+import logoBlanco from '../../assets/logos/iecm-blanco.png'
+import logoNegro from '../../assets/logos/iecm-negro.png'
 import api from '../../services/api.js'
 import { gsap } from 'gsap'
 import { Clock, CalendarDays, AlertCircle, Sparkles, ShieldCheck, CheckCircle } from '@lucide/vue'
 
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
 
 // Estado
 const loading = ref(false)
@@ -303,8 +307,17 @@ onUnmounted(() => {
       >
         <div 
           v-if="showExcepcionTooltip" 
-          class="absolute right-full mr-3 bottom-0 w-80 bg-white/98 text-slate-800 dark:bg-slate-900/98 dark:text-white backdrop-blur-md border border-amber-500/40 shadow-2xl rounded-2xl p-4 text-left"
+          class="modal-crystal absolute right-full mr-3 bottom-0 w-80 text-slate-800 dark:text-white border-amber-500/40 rounded-2xl p-4 text-left shadow-2xl z-50"
         >
+          <!-- Logotipo Institucional Posicionado Arriba de la Tarjeta -->
+          <div class="flex items-center justify-center pb-2.5 mb-2.5 border-b border-amber-500/20">
+            <img 
+              :src="themeStore.isDark ? logoBlanco : logoNegro" 
+              alt="IECM" 
+              class="h-7 max-w-[140px] w-auto object-contain transition-all duration-200 drop-shadow-xs" 
+            />
+          </div>
+
           <div class="flex items-center gap-2 mb-2 pb-2 border-b border-amber-500/20">
             <Sparkles class="w-4 h-4 text-amber-500 dark:text-amber-400" />
             <h4 class="text-xs font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
@@ -427,8 +440,17 @@ onUnmounted(() => {
       >
         <div 
           v-if="showMesVigenteTooltip" 
-          class="absolute right-full mr-3 bottom-0 w-80 bg-white/98 text-slate-800 dark:bg-[#161126]/98 dark:text-white backdrop-blur-md border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl p-4 text-left"
+          class="modal-crystal absolute right-full mr-3 bottom-0 w-80 text-slate-800 dark:text-white rounded-2xl p-4 text-left shadow-2xl z-50"
         >
+          <!-- Logotipo Institucional Posicionado Arriba de la Tarjeta -->
+          <div class="flex items-center justify-center pb-2.5 mb-2.5 border-b border-slate-200/80 dark:border-white/10">
+            <img 
+              :src="themeStore.isDark ? logoBlanco : logoNegro" 
+              alt="IECM" 
+              class="h-7 max-w-[140px] w-auto object-contain transition-all duration-200 drop-shadow-xs" 
+            />
+          </div>
+
           <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-200 dark:border-white/10">
             <Clock class="w-4 h-4 text-iecm-morado dark:text-iecm-morado-400" />
             <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">

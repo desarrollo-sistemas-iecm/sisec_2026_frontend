@@ -4,15 +4,19 @@ import { useRouter, useRoute } from 'vue-router'
 import { LayoutDashboard, CalendarDays, Edit3, ClipboardList, BarChart3, LogOut, Menu, X, ChevronLeft, ChevronRight, Settings } from '@lucide/vue'
 import { useAuth } from '../composables/useAuth.js'
 import { useGsapAnimations } from '../composables/useGsapAnimations.js'
+import { useThemeStore } from '../stores/themeStore.js'
+import { getSocket } from '../services/socket.js'
 import AppBadge from './ui/AppBadge.vue'
 import api from '../services/api.js'
 import Swal from 'sweetalert2'
-
+import logoBlanco from '../assets/logos/iecm-blanco.png'
+import logoNegro from '../assets/logos/iecm-negro.png'
 
 const router = useRouter()
 const route = useRoute()
 const { authStore, logout } = useAuth()
 const { animarSidebar } = useGsapAnimations()
+const themeStore = useThemeStore()
 
 const sidebarRef = ref(null)
 const isMobileOpen = ref(false)
@@ -29,15 +33,14 @@ const userRoleName = computed(() => {
 
 const menuItems = computed(() => {
   const allItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: [2, 3], activeColor: 'text-blue-400', hoverColor: 'group-hover:text-blue-400' },
-    { name: 'Programacion', path: '/programacion', icon: CalendarDays, roles: [1, 2, 3], activeColor: 'text-emerald-400', hoverColor: 'group-hover:text-emerald-400' },
-    { name: 'Captura', path: '/captura', icon: Edit3, roles: [1, 2, 3], activeColor: 'text-amber-400', hoverColor: 'group-hover:text-amber-400' },
-    { name: 'Encuesta', path: '/encuesta', icon: ClipboardList, roles: [2, 3], activeColor: 'text-rose-400', hoverColor: 'group-hover:text-rose-400' },
-    { name: 'Reportes', path: '/reportes', icon: BarChart3, roles: [1, 2, 3], activeColor: 'text-teal-400', hoverColor: 'group-hover:text-teal-400' },
-    { name: 'Administracion', path: '/administracion', icon: Settings, roles: [2, 3], activeColor: 'text-purple-400', hoverColor: 'group-hover:text-purple-400' },
+    { id: 'dashboard', name: 'Dashboard', path: '/', icon: LayoutDashboard, iconColor: 'text-blue-600 dark:text-blue-400' },
+    { id: 'programacion', name: 'Programacion', path: '/programacion', icon: CalendarDays, iconColor: 'text-emerald-600 dark:text-emerald-400' },
+    { id: 'captura', name: 'Captura', path: '/captura', icon: Edit3, iconColor: 'text-amber-500 dark:text-amber-400' },
+    { id: 'encuestas', name: 'Encuestas', path: '/encuesta', icon: ClipboardList, iconColor: 'text-rose-600 dark:text-rose-400' },
+    { id: 'reportes', name: 'Reportes', path: '/reportes', icon: BarChart3, iconColor: 'text-teal-600 dark:text-teal-400' },
+    { id: 'administracion', name: 'Administracion', path: '/administracion', icon: Settings, iconColor: 'text-purple-700 dark:text-purple-300' },
   ]
-  const userPermiso = Number(authStore.user?.permiso || authStore.user?.idpermiso)
-  return allItems.filter(item => item.roles.includes(userPermiso))
+  return allItems.filter(item => authStore.hasModulo(item.id))
 })
 
 const handleLogout = () => {
@@ -59,23 +62,24 @@ function initCanvas() {
   const observer = new ResizeObserver(() => resize())
   observer.observe(parent)
 
-  const PARTICLE_COUNT = 35
-  const CONNECTION_DIST = 90
-  const COLORS = {
-    particle: 'rgba(107, 45, 139,',
-    line: 'rgba(107, 45, 139,'
-  }
+  const PARTICLE_COUNT = 48
+  const CONNECTION_DIST = 110
 
-  const particles = Array.from({ length: 40 }, () => ({
-    x: Math.random() * 256,
-    y: Math.random() * window.innerHeight,
-    vx: (Math.random() - 0.5) * 0.4,
-    vy: (Math.random() - 0.5) * 0.4,
-    radius: Math.random() * 1.5 + 1
+  const particles = Array.from({ length: PARTICLE_COUNT }, () => ({
+    x: Math.random() * (parent.clientWidth || 256),
+    y: Math.random() * (parent.clientHeight || window.innerHeight),
+    vx: (Math.random() - 0.5) * 0.45,
+    vy: (Math.random() - 0.5) * 0.45,
+    radius: Math.random() * 2.0 + 1.8
   }))
 
   const draw = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    // En modo oscuro: Moradas #9358B8 (RGB: 147, 88, 184)
+    // En modo claro: Moradas finas #6B2D8B (RGB: 107, 45, 139) sobre fondo #DDD1E6
+    const isDark = themeStore.isDark
+    const colorRGB = isDark ? '147, 88, 184' : '107, 45, 139'
 
     particles.forEach(p => {
       p.x += p.vx
@@ -84,16 +88,17 @@ function initCanvas() {
       if (p.y < 0 || p.y > canvas.height) p.vy *= -1
     })
 
+    // Líneas de conexión (finitas y elegantes para modo claro y oscuro)
     for (let i = 0; i < particles.length; i++) {
       for (let j = i + 1; j < particles.length; j++) {
         const dx = particles[i].x - particles[j].x
         const dy = particles[i].y - particles[j].y
         const dist = Math.sqrt(dx * dx + dy * dy)
         if (dist < CONNECTION_DIST) {
-          const alpha = (1 - dist / CONNECTION_DIST) * 0.25
+          const alpha = (1 - dist / CONNECTION_DIST) * (isDark ? 0.40 : 0.38)
           ctx.beginPath()
-          ctx.strokeStyle = `${COLORS.line}${alpha})`
-          ctx.lineWidth = 0.8
+          ctx.strokeStyle = `rgba(${colorRGB}, ${alpha})`
+          ctx.lineWidth = 0.6
           ctx.moveTo(particles[i].x, particles[i].y)
           ctx.lineTo(particles[j].x, particles[j].y)
           ctx.stroke()
@@ -101,10 +106,20 @@ function initCanvas() {
       }
     }
 
+    // Partículas (más finitas, sutiles y elegantes en ambos modos)
     particles.forEach(p => {
+      const radius = p.radius * 0.52
+
+      // Halo resplandor
       ctx.beginPath()
-      ctx.fillStyle = `${COLORS.particle}0.6)`
-      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(${colorRGB}, ${isDark ? 0.20 : 0.16})`
+      ctx.arc(p.x, p.y, radius * 1.7, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Núcleo brillante
+      ctx.beginPath()
+      ctx.fillStyle = `rgba(${colorRGB}, ${isDark ? 0.92 : 0.88})`
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2)
       ctx.fill()
     })
 
@@ -116,26 +131,52 @@ function initCanvas() {
 }
 
 const windowWidth = ref(window.innerWidth)
+let socketInstance = null
+let cleanupCanvas = null
+let handleResize = null
 
 onMounted(() => {
-  window.addEventListener('resize', () => {
+  handleResize = () => {
     windowWidth.value = window.innerWidth
-  })
+  }
+  window.addEventListener('resize', handleResize)
   
   if (sidebarRef.value && window.innerWidth > 1024) {
     animarSidebar(sidebarRef.value)
   }
-  const cleanup = initCanvas()
+  cleanupCanvas = initCanvas()
   
   if (authStore.isAuthenticated) {
     fetchSidebarConfigs()
   }
 
-  onUnmounted(() => {
-    cancelAnimationFrame(animFrameId)
-    cleanup()
-    window.removeEventListener('resize', () => {})
-  })
+  // Escuchar cambios en vivo por Socket.IO
+  try {
+    socketInstance = getSocket()
+    if (socketInstance) {
+      socketInstance.on('config:manual', (data) => {
+        isManualHabilitado.value = Boolean(data?.habilitado)
+      })
+      socketInstance.on('config:ultima_actualizacion', (data) => {
+        isUltimaActHabilitado.value = Boolean(data?.habilitado)
+        if (data?.fecha) {
+          ultimaActFecha.value = data.fecha
+        }
+      })
+    }
+  } catch (err) {
+    console.warn('[SOCKET] Error escuchando configs en sidebar:', err)
+  }
+})
+
+onUnmounted(() => {
+  cancelAnimationFrame(animFrameId)
+  if (cleanupCanvas) cleanupCanvas()
+  if (handleResize) window.removeEventListener('resize', handleResize)
+  if (socketInstance) {
+    socketInstance.off('config:manual')
+    socketInstance.off('config:ultima_actualizacion')
+  }
 })
 
 const isManualHabilitado = ref(false)
@@ -194,8 +235,6 @@ watch(() => authStore.isAuthenticated, (newVal) => {
   }
 })
 
-
-
 const isDesktop = computed(() => windowWidth.value >= 1024)
 const effectiveCollapsed = computed(() => isDesktop.value && isCollapsed.value)
 
@@ -206,16 +245,16 @@ router.afterEach(() => {
 </script>
 
 <template>
-  <!-- Hamburger móbil -->
+  <!-- Hamburger móvil -->
   <button 
     v-if="!isMobileOpen"
-    class="lg:hidden fixed top-4 left-4 z-50 p-2 bg-iecm-morado text-white rounded-md shadow-md"
+    class="lg:hidden fixed top-4 left-4 z-50 p-2 text-slate-900 dark:text-white rounded-md shadow-md border border-white/40 backdrop-blur-sm sicec-sidebar"
     @click="isMobileOpen = true"
   >
     <Menu class="w-6 h-6" />
   </button>
 
-  <!-- Overlay móbil -->
+  <!-- Overlay móvil -->
   <div 
     v-if="isMobileOpen" 
     class="fixed inset-0 bg-slate-900/50 z-40 lg:hidden"
@@ -226,27 +265,36 @@ router.afterEach(() => {
   <aside 
     ref="sidebarRef"
     :class="[
-      'fixed inset-y-0 left-0 z-40 bg-[#080412] text-white flex flex-col transition-all duration-300 overflow-hidden lg:sticky lg:top-0 lg:h-screen lg:shrink-0',
+      'sicec-sidebar fixed inset-y-0 left-0 z-40 flex flex-col transition-all duration-300 overflow-hidden lg:sticky lg:top-0 lg:h-screen lg:shrink-0 border-r border-white/20 dark:border-white/10 shadow-xl',
       isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
       effectiveCollapsed ? 'w-20' : 'w-64'
     ]"
+    :style="{ backgroundColor: themeStore.isDark ? '#080412' : '#DDD1E6' }"
   >
-    <!-- Fondo Canvas -->
-    <canvas ref="canvasRef" class="absolute inset-0 w-full h-full z-0 pointer-events-none opacity-60"></canvas>
+    <!-- Fondo Canvas Partículas (Moradas #9358B8 en oscuro, moradas finitas #6B2D8B en claro) -->
+    <canvas ref="canvasRef" class="absolute inset-0 w-full h-full z-0 pointer-events-none opacity-100"></canvas>
     
     <!-- Contenido encima del canvas -->
     <div class="relative z-10 flex flex-col h-full w-full">
       <!-- Logo area -->
       <div class="h-24 flex items-center justify-between px-4 relative">
-        <img v-if="!effectiveCollapsed" src="../assets/logos/iecm-blanco.png" alt="IECM Logo Blanco" class="w-[85%] max-w-[200px] h-auto object-contain transition-all duration-300 drop-shadow-md mx-auto" />
-        <div v-else class="w-10 h-10 rounded-full bg-iecm-morado-600 flex items-center justify-center font-bold text-white text-sm shadow-[0_0_10px_rgba(107,45,139,0.5)] mx-auto">
+        <img 
+          v-if="!effectiveCollapsed" 
+          :src="themeStore.isDark ? logoBlanco : logoNegro" 
+          alt="IECM Logo" 
+          :class="[
+            'h-auto object-contain transition-all duration-300 drop-shadow-xs mx-auto',
+            themeStore.isDark ? 'w-[82%] max-w-[190px] max-h-20' : 'w-[68%] max-w-[165px] max-h-[92px]'
+          ]" 
+        />
+        <div v-else class="w-10 h-10 rounded-full bg-white/30 dark:bg-white/10 border border-white/40 dark:border-white/20 flex items-center justify-center font-black text-slate-900 dark:text-white text-sm shadow-md mx-auto backdrop-blur-xs">
           IE
         </div>
         
         <!-- Botón cerrar (Móvil) -->
         <button 
           @click="isMobileOpen = false"
-          class="lg:hidden p-1.5 text-iecm-dorado hover:bg-iecm-morado-800 rounded-lg transition-colors absolute right-4"
+          class="lg:hidden p-1.5 text-slate-900 dark:text-white hover:bg-white/20 rounded-lg transition-colors absolute right-4"
         >
           <X class="w-6 h-6" />
         </button>
@@ -254,79 +302,106 @@ router.afterEach(() => {
         <!-- Toggle Collapse Button (Desktop) -->
         <button 
           @click="isCollapsed = !isCollapsed"
-          class="hidden lg:flex absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-iecm-morado border border-iecm-morado-400 text-white rounded-full items-center justify-center shadow-[0_0_10px_rgba(107,45,139,0.5)] hover:bg-white hover:text-iecm-morado hover:border-transparent transition-all z-50 cursor-pointer"
+          class="hidden lg:flex absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-white/95 dark:bg-[#161028] border border-white dark:border-white/20 text-slate-900 dark:text-white rounded-full items-center justify-center shadow-md hover:bg-white hover:scale-110 transition-all z-50 cursor-pointer"
         >
-          <component :is="isCollapsed ? 'ChevronRight' : 'ChevronLeft'" class="w-3 h-3" />
+          <component :is="isCollapsed ? 'ChevronRight' : 'ChevronLeft'" class="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <!-- Navegación -->
-      <nav class="flex-1 overflow-y-auto overflow-x-hidden py-6 px-3 space-y-1.5 scrollbar-thin scrollbar-thumb-iecm-morado-600 scrollbar-track-transparent">
+      <!-- Navegación con Botones Cristalinos (Efecto Liquid Crystal Glass) -->
+      <nav class="flex-1 overflow-y-auto overflow-x-hidden py-4 px-3 space-y-2 scrollbar-thin scrollbar-thumb-white/30 scrollbar-track-transparent">
         <RouterLink 
           v-for="item in menuItems" 
           :key="item.path" 
           :to="item.path"
-          class="group flex items-center rounded-lg px-3 py-3 text-sm font-medium transition-all duration-200"
+          class="btn-crystal-menu group flex items-center px-3 py-2.5"
           :class="[
-            route.path === item.path ? 'bg-white/15 text-white shadow-sm' : 'text-white/90 hover:bg-white/8 hover:text-white',
+            route.path === item.path ? 'active' : '',
             effectiveCollapsed ? 'justify-center' : 'gap-3'
           ]"
           :title="effectiveCollapsed ? item.name : ''"
         >
-          <component 
-            :is="item.icon" 
-            class="w-5 h-5 opacity-90 shrink-0 transition-colors duration-200" 
-            :class="route.path === item.path ? item.activeColor : `text-white/80 ${item.hoverColor}`"
-          />
-          <span v-if="!effectiveCollapsed" class="whitespace-nowrap">{{ item.name }}</span>
+          <!-- Contenedor del ícono cristalino -->
+          <div 
+            class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all duration-200 border border-white/20 dark:border-white/10"
+            :class="route.path === item.path 
+              ? 'bg-white/90 dark:bg-white/20 shadow-xs' 
+              : 'bg-white/30 dark:bg-white/[0.06] group-hover:bg-white/50 dark:group-hover:bg-white/[0.14]'"
+          >
+            <component 
+              :is="item.icon" 
+              class="w-4.5 h-4.5 shrink-0 transition-transform duration-200 group-hover:scale-110" 
+              :class="item.iconColor"
+            />
+          </div>
+          <!-- Nombre de la opción -->
+          <span v-if="!effectiveCollapsed" class="whitespace-nowrap tracking-tight font-extrabold text-sm">{{ item.name }}</span>
+          
+          <!-- Indicador activo sutil -->
+          <span 
+            v-if="!effectiveCollapsed && route.path === item.path" 
+            class="ml-auto w-1.5 h-4 rounded-full bg-[#6B2D8B] dark:bg-[#9358B8]"
+          ></span>
         </RouterLink>
       </nav>
 
-      <!-- Botón Manual de Usuario -->
-      <div v-if="isManualHabilitado || authStore.isSuperAdmin || authStore.isAdmin" class="px-4 py-2">
+      <!-- Botón Manual de Usuario Translúcido -->
+      <div v-if="isManualHabilitado" class="px-3 py-2">
         <button
           type="button"
           @click="verManual"
-          class="flex items-center rounded-lg px-3 py-2.5 text-sm font-medium text-white hover:bg-iecm-morado-800/40 transition-all w-full cursor-pointer"
+          class="flex items-center rounded-xl px-3 py-2.5 text-sm font-extrabold text-slate-900 dark:text-slate-100 bg-white/40 hover:bg-white/60 dark:bg-white/[0.04] dark:hover:bg-white/[0.10] border border-white/60 hover:border-white/80 dark:border-white/10 dark:hover:border-white/25 backdrop-blur-[1.5px] transition-all w-full cursor-pointer hover:scale-[1.01]"
           :class="effectiveCollapsed ? 'justify-center' : 'gap-3'"
           title="Ver manual de usuario"
         >
-          <ClipboardList class="w-5 h-5 opacity-90 shrink-0 text-red-500" />
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/50 dark:bg-white/[0.06] group-hover:bg-white/70 dark:group-hover:bg-white/[0.12]">
+            <ClipboardList class="w-4.5 h-4.5 shrink-0 text-[#FF0000]" />
+          </div>
           <span v-if="!effectiveCollapsed" class="whitespace-nowrap">Ver manual de usuario</span>
         </button>
       </div>
 
-
-      <!-- Footer de usuario -->
-      <div class="p-4 bg-[#0A0516]/80 backdrop-blur-md">
-        <!-- Última actualización -->
-        <div v-if="isUltimaActHabilitado && !effectiveCollapsed" class="text-center mb-3 px-2 py-1.5 bg-slate-900/60 border border-iecm-morado-900/40 rounded-lg">
-          <p class="text-[9px] text-slate-400 uppercase tracking-wider font-semibold">Última actualización</p>
-          <p class="text-xs text-emerald-400 font-bold mt-0.5">{{ formatDateString(ultimaActFecha) }}</p>
+      <!-- Sección de abajo: Mismo fondo que todo (sin caja separada), las partículas fluyen libremente -->
+      <div class="p-4 bg-transparent">
+        <!-- Última actualización (Sin caja gris, integrado al mismo fondo) -->
+        <div v-if="isUltimaActHabilitado && !effectiveCollapsed" class="text-center mb-3 px-2 py-0.5 bg-transparent">
+          <p class="text-[9px] text-slate-900 dark:text-slate-400 uppercase tracking-wider font-extrabold">Última actualización</p>
+          <p class="text-xs text-emerald-800 dark:text-emerald-400 font-black mt-0.5">{{ formatDateString(ultimaActFecha) }}</p>
         </div>
 
+        <!-- Usuario y Super Admin (Integrado al mismo fondo) -->
         <div class="flex items-center gap-3 mb-4" :class="effectiveCollapsed ? 'justify-center px-0' : 'px-2'">
-
-          <div class="h-10 w-10 shrink-0 rounded-full bg-iecm-morado-800 flex items-center justify-center border border-iecm-morado-500 font-bold text-white shadow-[0_0_10px_rgba(107,45,139,0.3)]">
+          <!-- Avatar con borde rojo #FF0000 -->
+          <div class="h-10 w-10 shrink-0 rounded-full bg-white/95 dark:bg-transparent flex items-center justify-center border-2 border-[#FF0000] font-black text-slate-900 dark:text-white shadow-sm">
             {{ userName.charAt(0).toUpperCase() }}
           </div>
           <div v-if="!effectiveCollapsed" class="min-w-0 flex-1 transition-opacity duration-300">
-            <p class="truncate text-sm font-semibold text-white">{{ userName }}</p>
-            <AppBadge :variant="authStore.isSuperAdmin ? 'danger' : (authStore.isAdmin ? 'warning' : 'info')" class="mt-0.5 scale-90 origin-left">
+            <!-- Nombre de usuario -->
+            <p class="truncate text-sm font-extrabold text-slate-900 dark:text-white">{{ userName }}</p>
+            <!-- Badge Super Admin con color #FF0000 -->
+            <div 
+              v-if="authStore.isSuperAdmin"
+              class="inline-flex items-center gap-1.5 px-2.5 py-0.5 mt-0.5 rounded-full border-2 border-[#FF0000] bg-white/95 dark:bg-transparent shadow-xs text-xs font-black text-slate-900 dark:text-white"
+            >
+              <span class="w-2 h-2 rounded-full bg-[#FF0000] shrink-0 animate-pulse"></span>
+              <span>Super Admin</span>
+            </div>
+            <AppBadge v-else :variant="authStore.isAdmin ? 'warning' : 'info'" class="mt-0.5 scale-90 origin-left font-bold text-slate-900 dark:text-white">
               {{ userRoleName }}
             </AppBadge>
           </div>
         </div>
         
+        <!-- Lo ÚNICO translúcido abajo: Botón Cerrar Sesión con letras en #FF0000 -->
         <button
           type="button"
           @click="handleLogout"
-          class="flex items-center justify-center rounded-lg bg-iecm-morado-900/50 hover:bg-red-900/40 hover:text-red-400 border border-transparent hover:border-red-900/50 transition-all text-iecm-morado-200"
-          :class="effectiveCollapsed ? 'w-full py-2.5' : 'w-full gap-2 px-4 py-2.5 text-sm font-medium'"
+          class="flex items-center justify-center rounded-xl bg-white/40 hover:bg-white/60 dark:bg-white/[0.05] dark:hover:bg-white/[0.12] border border-white/60 dark:border-white/15 hover:border-white/80 dark:hover:border-white/30 backdrop-blur-[1.5px] transition-all cursor-pointer shadow-xs hover:shadow-md"
+          :class="effectiveCollapsed ? 'w-full py-2.5' : 'w-full gap-2 px-4 py-2.5 text-sm font-extrabold'"
           :title="effectiveCollapsed ? 'Cerrar sesión' : ''"
         >
-          <LogOut class="w-4 h-4 shrink-0" />
-          <span v-if="!effectiveCollapsed" class="whitespace-nowrap">Cerrar sesión</span>
+          <LogOut class="w-4 h-4 shrink-0 text-[#FF0000]" />
+          <span v-if="!effectiveCollapsed" class="whitespace-nowrap font-extrabold text-[#FF0000]">Cerrar sesión</span>
         </button>
       </div>
     </div>

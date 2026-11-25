@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import {
-  ClipboardList, Search, ChevronRight, ChevronDown, FileText,
-  Download, Eye, CheckCircle2, Users, BarChart3, Building,
+  ClipboardList, Search, ChevronRight, ChevronDown,
+  CheckCircle2, Users, BarChart3, Building,
   Calendar, Sparkles, Filter, RefreshCw, AlertCircle
 } from '@lucide/vue'
 import api from '../services/api.js'
@@ -20,6 +20,11 @@ const authStore = useAuthStore()
 const toast = useToast()
 const { animarVista } = useGsapAnimations()
 
+const isAdmin = computed(() => Number(authStore.user?.id_tipousuario || authStore.user?.permiso) === 2)
+const isSuperAdmin = computed(() => Number(authStore.user?.id_tipousuario || authStore.user?.permiso) === 3)
+const isPrivileged = computed(() => isAdmin.value || isSuperAdmin.value)
+const userDistrito = computed(() => Number(authStore.user?.idsede || authStore.user?.id_distrito || 0))
+
 const vistaRef = ref(null)
 const loading = ref(false)
 const acciones = ref([])
@@ -34,21 +39,6 @@ const dateTo = ref('')
 const expandedRows = ref(new Set())
 // Caché de encuestas por acción: { [id_accion]: { loading: boolean, data: [] } }
 const encuestasCache = ref({})
-
-// Modal para visualización rápida de PDF o detalle de encuesta
-const previewModalOpen = ref(false)
-const selectedPdfUrl = ref('')
-const selectedSurveyDetail = ref(null)
-
-// Textos descriptivos de las 6 preguntas Likert P3-P8
-const preguntasInfo = [
-  { key: 'p3', text: 'P3. ¿Los temas abordados resultaron claros e interesantes?' },
-  { key: 'p4', text: 'P4. ¿La persona facilitadora demostró dominio del tema y resolvió dudas?' },
-  { key: 'p5', text: 'P5. ¿Los materiales didácticos y actividades facilitaron la comprensión?' },
-  { key: 'p6', text: 'P6. ¿Considera que lo aprendido le será útil para su vida cotidiana o cívica?' },
-  { key: 'p7', text: 'P7. ¿El tiempo asignado a la actividad fue adecuado y suficiente?' },
-  { key: 'p8', text: 'P8. En general, ¿cuál es su nivel de satisfacción con esta acción educativa?' }
-]
 
 const getLikertBadge = (val) => {
   switch (Number(val)) {
@@ -67,16 +57,34 @@ const getLikertBadge = (val) => {
   }
 }
 
-// Cargar listado de acciones que tienen o pueden tener encuestas
+// Cargar listado de acciones que tienen o pueden tener encuestas (ÚNICAMENTE CON FOLIO)
 const loadAcciones = async () => {
   loading.value = true
   try {
     const params = {}
-    if (selectedDistrito.value) {
-      params.id_distrito = selectedDistrito.value
+    if (isPrivileged.value) {
+      if (selectedDistrito.value) {
+        params.id_distrito = selectedDistrito.value
+      }
+    } else {
+      params.id_distrito = userDistrito.value
     }
+
     const { data } = await api.get('/programacion-2027/admin/acciones', { params })
-    acciones.value = data?.data ?? []
+    const raw = data?.data ?? []
+    
+    // Si es distrital, filtrar además estrictamente por su propio distrito en frontend
+    const scopedList = isPrivileged.value 
+      ? raw 
+      : raw.filter(a => Number(a.id_distrito) === userDistrito.value)
+
+    // Únicamente acciones con folio oficial asignado y que no estén canceladas
+    acciones.value = scopedList.filter(a => 
+      a.folio_accion_educativa && 
+      String(a.folio_accion_educativa).trim() !== '' && 
+      !String(a.folio_accion_educativa).toLowerCase().includes('sin folio') &&
+      Number(a.id_estado) !== 4
+    )
   } catch (error) {
     toast.error('No se pudo cargar el listado de acciones.')
   } finally {
@@ -116,6 +124,14 @@ const filteredAcciones = computed(() => {
   const to = dateTo.value
 
   return acciones.value.filter((a) => {
+    // Si no es Administrador ni SuperAdmin, limitar estrictamente al distrito asignado
+    if (!isPrivileged.value && Number(a.id_distrito) !== userDistrito.value) {
+      return false
+    }
+
+    // Garantizar que solo pasen actividades con folio oficial
+    if (!a.folio_accion_educativa || !String(a.folio_accion_educativa).trim()) return false
+
     const fecha = String(a.fecha_programada || '').split('T')[0]
     if (from && fecha < from) return false
     if (to && fecha > to) return false
@@ -134,23 +150,8 @@ const metrics = computed(() => {
   return { totalAcciones, totalEncuestas, accionesConEncuestas }
 })
 
-const getPdfUrl = (row, encuesta) => {
-  const distritoKey = `DD${row.id_distrito || row.distrito || 1}`
-  const folio = row.folio_accion_educativa || `ID_${row.id_acciones_educativas}`
-  const fechaStr = String(row.fecha_programada || '').split('T')[0]
-  const filename = `E${encuesta.consecutivo_encuesta}-${row.clave_accion}-${distritoKey}-${fechaStr}.pdf`
-  const baseUploadUrl = import.meta.env.VITE_API_URL?.replace(/\/api$/, '') || ''
-  return `${baseUploadUrl}/uploads/2027/${distritoKey}/${folio}/Encuestas/${filename}`
-}
-
-const abrirPdf = (row, encuesta) => {
-  const url = getPdfUrl(row, encuesta)
-  window.open(url, '_blank')
-}
-
 onMounted(() => {
   loadAcciones()
-  if (vistaRef.value) animarVista(vistaRef.value)
 })
 
 watch(selectedDistrito, () => {
@@ -160,39 +161,74 @@ watch(selectedDistrito, () => {
 
 <template>
   <div ref="vistaRef" class="space-y-6">
-    <!-- Header Banner -->
-    <div class="rounded-2xl bg-[#403166] dark:bg-[#231A38] px-6 py-6 text-white shadow-iecm-sm flex flex-wrap items-center justify-between gap-6 relative overflow-hidden">
-      <div class="absolute right-0 top-0 w-80 h-80 bg-white/5 opacity-20 rounded-full blur-3xl translate-x-1/3 -translate-y-1/3"></div>
-
-      <div class="flex items-start gap-4 relative z-10">
-        <div class="p-3 bg-white/15 rounded-xl border border-white/20 shadow-sm">
-          <ClipboardList class="w-8 h-8 text-white" />
-        </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h2 class="text-2xl font-bold tracking-tight text-white">Módulo de Encuestas de Satisfacción 2027</h2>
-            <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-400/20 text-emerald-200 border border-emerald-300/30">
-              Tabla Dinámica Maestro-Detalle (1:N)
+    <!-- Header Banner Minimalista y Profesional -->
+    <header class="space-y-4 pb-4 border-b border-slate-200/90 dark:border-slate-800">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+        <div class="space-y-1.5 max-w-2xl">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
+              <div class="p-2 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 rounded-xl border border-emerald-200/60 dark:border-emerald-800/50 shadow-2xs">
+                <ClipboardList class="w-6 h-6" />
+              </div>
+              <span>Módulo de Encuestas de Satisfacción 2027</span>
+            </h2>
+            <span v-if="isPrivileged" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800">
+              Visión Global (33 Direcciones Distritales)
+            </span>
+            <span v-else class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
+              Dirección Distrital {{ userDistrito }}
             </span>
           </div>
-          <p class="text-purple-200 text-sm mt-1 max-w-xl">
-            Visualización jerárquica de todas las encuestas respondidas por los participantes en cada acción educativa. Consulta las respuestas sociodemográficas, la escala Likert y descarga los formatos PDF individuales oficiales.
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            Visualización jerárquica de todas las encuestas respondidas por los participantes en cada acción educativa. Consulta las respuestas sociodemográficas y la escala Likert registrada.
           </p>
         </div>
-      </div>
 
-      <!-- KPI Pills -->
-      <div class="flex items-center gap-3 relative z-10">
-        <div class="bg-white/10 backdrop-blur-sm px-4 py-2.5 rounded-xl border border-white/15 text-center">
-          <span class="block text-xs uppercase tracking-wider text-purple-200 font-semibold">Total Encuestas</span>
-          <span class="text-xl font-extrabold text-white">{{ metrics.totalEncuestas }}</span>
-        </div>
-        <div class="bg-emerald-500/20 backdrop-blur-sm px-4 py-2.5 rounded-xl border border-emerald-400/30 text-center">
-          <span class="block text-xs uppercase tracking-wider text-emerald-200 font-semibold">Acciones con Encuesta</span>
-          <span class="text-xl font-extrabold text-emerald-300">{{ metrics.accionesConEncuestas }}</span>
+        <!-- Cards KPI Modernos de Alto Impacto para Encuestas -->
+        <div class="grid grid-cols-2 gap-3.5 shrink-0 self-start lg:self-auto">
+          <!-- Card 1: Total Encuestas -->
+          <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs hover:shadow-md transition-all duration-200 min-w-[175px] group">
+            <div class="flex items-center justify-between mb-2">
+              <div class="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950/70 text-[#6B2D8B] dark:text-purple-300 flex items-center justify-center group-hover:scale-105 transition-transform shadow-2xs">
+                <ClipboardList class="w-4 h-4" />
+              </div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-[#6B2D8B] dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200/80 dark:border-purple-800/60 px-2.5 py-0.5 rounded-full">
+                Total
+              </span>
+            </div>
+            <div class="space-y-0.5">
+              <span class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight block">
+                {{ metrics.totalEncuestas }}
+              </span>
+              <span class="text-xs font-medium text-slate-500 dark:text-slate-400 block truncate">
+                Cuestionarios capturados
+              </span>
+            </div>
+          </div>
+
+          <!-- Card 2: Con Encuestas -->
+          <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/60 shadow-xs hover:shadow-md transition-all duration-200 min-w-[175px] group">
+            <div class="flex items-center justify-between mb-2">
+              <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform shadow-2xs">
+                <CheckCircle2 class="w-4 h-4" />
+              </div>
+              <span class="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/60 px-2.5 py-0.5 rounded-full">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                Con Encuestas
+              </span>
+            </div>
+            <div class="space-y-0.5">
+              <span class="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight block">
+                {{ metrics.accionesConEncuestas }}
+              </span>
+              <span class="text-xs font-medium text-slate-500 dark:text-slate-400 block truncate" :title="isPrivileged ? `${metrics.accionesConEncuestas} de ${metrics.totalAcciones} acciones con folio` : `${metrics.accionesConEncuestas} de ${metrics.totalAcciones} acciones de tu distrito`">
+                {{ isPrivileged ? `de ${metrics.totalAcciones} con folio` : `de ${metrics.totalAcciones} en D${userDistrito}` }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </header>
 
     <!-- Contenedor Maestro -->
     <AppCard>
@@ -208,11 +244,26 @@ watch(selectedDistrito, () => {
             </AppInput>
           </div>
 
-          <div>
+          <!-- Selector de Distrito para Admin/Superadmin | Indicador Fijo para Distrital -->
+          <div v-if="isPrivileged">
             <AppSelect v-model="selectedDistrito" label="Distrito">
-              <option value="">Todos los distritos</option>
+              <option value="">Todos los distritos (1-33)</option>
               <option v-for="d in 33" :key="d" :value="d">Distrito {{ d }}</option>
             </AppSelect>
+          </div>
+          <div v-else>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+              Distrito Territorial
+            </label>
+            <div class="h-10 px-3.5 flex items-center justify-between rounded-xl bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-800/60 text-xs font-bold text-[#6B2D8B] dark:text-purple-300">
+              <span class="flex items-center gap-2">
+                <Building class="w-4 h-4 text-[#6B2D8B] dark:text-purple-400" />
+                Distrito {{ userDistrito }}
+              </span>
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">
+                Tu Sede
+              </span>
+            </div>
           </div>
 
           <div class="flex items-center gap-2">
@@ -255,9 +306,9 @@ watch(selectedDistrito, () => {
                   </button>
                 </td>
 
-                <!-- Folio -->
-                <td class="px-4 py-4 font-mono font-bold text-xs text-purple-900 dark:text-purple-300">
-                  {{ row.folio_accion_educativa || `ID-${row.id_acciones_educativas}` }}
+                <!-- Folio Oficial (Verde) -->
+                <td class="px-4 py-4 font-mono font-extrabold text-xs text-emerald-600 dark:text-emerald-400 tracking-tight">
+                  {{ row.folio_accion_educativa }}
                 </td>
 
                 <!-- Acción Educativa -->
@@ -362,7 +413,6 @@ watch(selectedDistrito, () => {
                             <th class="px-3 py-2.5 text-center" title="P6: Utilidad cívica">P6</th>
                             <th class="px-3 py-2.5 text-center" title="P7: Tiempo asignado">P7</th>
                             <th class="px-3 py-2.5 text-center" title="P8: Satisfacción general">P8</th>
-                            <th class="px-4 py-2.5 text-center">Formato PDF</th>
                           </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
@@ -417,38 +467,35 @@ watch(selectedDistrito, () => {
                                 {{ encuesta.p8 }}
                               </span>
                             </td>
-
-                            <!-- Botón PDF Oficial Limpio -->
-                            <td class="px-4 py-3 text-center">
-                              <AppButton
-                                variant="secondary"
-                                size="sm"
-                                class="text-xs text-purple-700 hover:bg-purple-50 border border-purple-200"
-                                title="Ver / Descargar formato PDF individual limpio"
-                                @click="abrirPdf(row, encuesta)"
-                              >
-                                <template #icon><FileText class="w-3.5 h-3.5 text-purple-600" /></template>
-                                Ver PDF
-                              </AppButton>
-                            </td>
                           </tr>
                         </tbody>
                       </table>
-                    </div>
-
-                    <!-- Guía de Preguntas Likert -->
-                    <div class="p-3 bg-purple-50/50 dark:bg-slate-800/80 rounded-lg border border-purple-100 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-400">
-                      <p class="font-bold text-purple-900 dark:text-purple-300 mb-1">Guía del Cuestionario de Satisfacción:</p>
-                      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                        <div v-for="q in preguntasInfo" :key="q.key">
-                          <strong class="text-purple-800 dark:text-purple-300">{{ q.key.toUpperCase() }}:</strong> {{ q.text.replace(/^P\d\.\s*/, '') }}
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </td>
               </tr>
             </template>
+
+            <!-- Estado Vacío -->
+            <tr v-if="filteredAcciones.length === 0 && !loading">
+              <td colspan="8" class="py-12 text-center text-slate-500 dark:text-slate-400">
+                <ClipboardList class="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                <p class="font-bold text-sm text-slate-700 dark:text-slate-300">
+                  {{ isPrivileged ? 'No se encontraron acciones educativas con los filtros seleccionados.' : `No hay acciones educativas registradas para el Distrito ${userDistrito}.` }}
+                </p>
+                <p class="text-xs text-slate-400 mt-1">
+                  Las encuestas de satisfacción se visualizan para acciones educativas que cuentan con folio institucional.
+                </p>
+              </td>
+            </tr>
+
+            <!-- Estado Cargando -->
+            <tr v-if="loading">
+              <td colspan="8" class="py-12 text-center text-slate-500">
+                <RefreshCw class="w-7 h-7 text-[#6B2D8B] animate-spin mx-auto mb-2" />
+                <p class="text-xs font-semibold">Cargando encuestas distritales...</p>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

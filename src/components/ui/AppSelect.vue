@@ -52,11 +52,16 @@ const selectClasses = computed(() => {
     </label>
     
     <div class="relative">
+      <!-- Icon slot left estilo GitHub Primer -->
+      <div v-if="$slots.icon" class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
+        <slot name="icon"></slot>
+      </div>
+
       <select
         :id="selectId"
         :value="modelValue"
         :disabled="disabled"
-        :class="selectClasses"
+        :class="[selectClasses, $slots.icon ? 'pl-10' : '']"
         @change="onChange"
         @blur="onBlur"
         v-bind="$attrs"

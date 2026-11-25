@@ -15,9 +15,9 @@
   --iecm-morado-oscuro: #3E1857;
   --iecm-morado-claro:  #944DB9;
   --iecm-dorado:        #D97706;
-  --iecm-gris:          #E2D3F0;
-  --iecm-texto:         #2A2438;
-  --iecm-borde:         #E0D9EB;
+  --iecm-gris:          #FFFFFF;
+  --iecm-texto:         #1E293B;
+  --iecm-borde:         #E2E8F0;
 
   color-scheme: light;
 }
@@ -46,7 +46,7 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   font-size: 14px;
   color: var(--iecm-texto);
-  background-color: var(--iecm-gris);
+  background-color: #FFFFFF;
   margin: 0;
   padding: 0;
 }
@@ -67,16 +67,18 @@ body {
   background: var(--iecm-morado);
 }
 
-/* ── Transiciones de ruta (Vue Transition) ────────── */
+/* ── Transiciones de ruta Ultra Fluidas (Vue Transition) ── */
 .vista-enter-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
 }
 .vista-leave-active {
-  transition: opacity 0.15s ease;
+  transition: opacity 0.12s ease-out;
+  will-change: opacity;
 }
 .vista-enter-from {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(6px);
 }
 .vista-leave-to {
   opacity: 0;
@@ -114,18 +116,18 @@ body {
 
 /* ── Componentes reutilizables ────────────────────── */
 @layer components {
-  /* Input / Select base */
+  /* Input / Select base - Estilo GitHub Primer (altura estandarizada a 40px) */
   .input-iecm {
-    @apply w-full rounded-lg border border-iecm-gris-200 bg-white px-3 py-2 text-sm text-iecm-texto
-           placeholder:text-iecm-texto-muted
-           focus:border-iecm-morado focus:outline-none focus:ring-2 focus:ring-iecm-morado-100
+    @apply w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900
+           placeholder:text-slate-400 shadow-sm
+           focus:border-iecm-morado focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20
            transition-colors duration-150
-           dark:bg-iecm-dark-header dark:border-iecm-dark-border dark:text-iecm-dark-text dark:placeholder:text-slate-500 dark:focus:ring-iecm-morado-500/35;
+           dark:bg-slate-800/90 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:ring-purple-500/25;
   }
 
-  /* Label base */
+  /* Label base - Estilo GitHub Primer (limpio, sentence-case, altura garantizada) */
   .label-iecm {
-    @apply block text-xs font-semibold uppercase tracking-wide text-iecm-texto-suave mb-1 dark:text-iecm-dark-text-muted;
+    @apply block text-sm font-semibold text-slate-800 mb-1.5 dark:text-slate-200 leading-5 min-h-[20px];
   }
 
   /* Botón primario */
@@ -150,12 +152,18 @@ body {
   }
 }
 
-/* ── SweetAlert2 Dark Mode Overrides ────────────────── */
+/* ── SweetAlert2 Dark Mode Overrides (Translucent Crystal) ────────────────── */
 .dark .swal2-popup {
-  background-color: #0f172a !important; /* slate-900 */
-  color: #e2e8f0 !important; /* slate-200 */
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.5) !important;
+  background: linear-gradient(150deg, rgba(28, 17, 48, 0.90) 0%, rgba(18, 11, 33, 0.86) 45%, rgba(10, 6, 20, 0.94) 100%) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 1.5rem !important;
+  box-shadow: 
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.25),
+    0 24px 64px -12px rgba(0, 0, 0, 0.9), 
+    0 0 55px rgba(147, 88, 184, 0.35) !important;
 }
 .dark .swal2-title {
   color: #ffffff !important;
@@ -193,4 +201,161 @@ body {
   background-color: #1e293b !important;
   color: #f87171 !important;
 }
+
+/* ── Sidebar temático (Modo Claro: #B076B7, Modo Oscuro: #080412) ── */
+.sicec-sidebar {
+  background-color: #DDD1E6 !important;
+}
+.dark .sicec-sidebar,
+html.dark .sicec-sidebar {
+  background-color: #080412 !important;
+}
+
+/* ── Botones de Menú Cristalinos (Efecto Liquid Crystal Glass) ── */
+.btn-crystal-menu {
+  position: relative;
+  border-radius: 0.85rem;
+  backdrop-filter: blur(2px) saturate(140%);
+  -webkit-backdrop-filter: blur(2px) saturate(140%);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.25) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 1.5px rgba(255, 255, 255, 0.85), 0 3px 10px rgba(107, 45, 139, 0.05);
+  color: #1a0d24;
+}
+.btn-crystal-menu:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.4) 100%);
+  border-color: rgba(255, 255, 255, 0.95);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 1), 0 5px 14px rgba(107, 45, 139, 0.09);
+  transform: translateY(-1px);
+}
+.btn-crystal-menu.active {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.75) 100%);
+  border-color: rgba(255, 255, 255, 1);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 1), 0 6px 18px rgba(107, 45, 139, 0.12);
+  color: #0b0212;
+  transform: translateY(-1px);
+}
+
+/* Modo Oscuro: Crystal Liquid Glass traslúcido de alto impacto */
+.dark .btn-crystal-menu {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.015) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.25), 0 4px 16px rgba(0, 0, 0, 0.25);
+  color: #ffffff;
+}
+.dark .btn-crystal-menu:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.04) 100%);
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.45), 0 8px 24px rgba(0, 0, 0, 0.35);
+  transform: translateY(-1px);
+}
+.dark .btn-crystal-menu.active {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.20) 0%, rgba(147, 88, 184, 0.18) 100%);
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: inset 0 1px 2px 0 rgba(255, 255, 255, 0.6), 0 0 22px rgba(147, 88, 184, 0.45), 0 4px 16px rgba(0, 0, 0, 0.4);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+/* ── SweetAlert2 Toast SISEC ────────────────── */
+.sicec-toast-popup {
+  padding: 0.9rem 1.3rem !important;
+  font-family: inherit !important;
+  border-radius: 1.1rem !important;
+  box-shadow: 0 16px 40px -4px rgba(0, 0, 0, 0.8), 0 0 24px rgba(147, 88, 184, 0.3) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+.sicec-toast-popup.swal2-icon-success {
+  background: linear-gradient(135deg, rgba(13, 40, 24, 0.96) 0%, rgba(6, 23, 13, 0.98) 100%) !important;
+  border: 1px solid rgba(16, 185, 129, 0.4) !important;
+}
+.sicec-toast-popup.swal2-icon-error {
+  background: linear-gradient(135deg, rgba(48, 14, 20, 0.96) 0%, rgba(23, 7, 10, 0.98) 100%) !important;
+  border: 1px solid rgba(239, 68, 68, 0.45) !important;
+}
+.sicec-toast-popup.swal2-icon-warning {
+  background: linear-gradient(135deg, rgba(48, 30, 6, 0.96) 0%, rgba(25, 15, 2, 0.98) 100%) !important;
+  border: 1px solid rgba(245, 158, 11, 0.45) !important;
+}
+.sicec-toast-popup .swal2-title {
+  font-size: 0.95rem !important;
+  font-weight: 800 !important;
+  color: #ffffff !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.sicec-toast-popup .swal2-html-container {
+  font-size: 0.83rem !important;
+  color: #cbd5e1 !important;
+  margin-top: 0.25rem !important;
+  padding: 0 !important;
+}
+
+/* ── Tarjeta Cristalina de Login (Ultra Glassmorphism & Liquid Crystal) ── */
+.login-card-crystal {
+  position: relative;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.11) 0%, rgba(147, 88, 184, 0.09) 30%, rgba(10, 5, 22, 0.52) 100%) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.26) !important;
+  box-shadow: 
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 1.5px 0 rgba(255, 255, 255, 0.15),
+    0 24px 64px -12px rgba(0, 0, 0, 0.8),
+    0 0 70px -10px rgba(147, 88, 184, 0.45) !important;
+}
+
+/* ── Modales Cristalinos Líquidos (Translucent Liquid Crystal Modals) ── */
+.modal-crystal {
+  position: relative;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 
+    0 24px 60px -12px rgba(0, 0, 0, 0.25),
+    0 0 35px rgba(107, 45, 139, 0.08);
+}
+
+.dark .modal-crystal {
+  background: linear-gradient(150deg, rgba(28, 17, 48, 0.86) 0%, rgba(18, 11, 33, 0.82) 45%, rgba(10, 6, 20, 0.90) 100%) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -1px 1px 0 rgba(255, 255, 255, 0.06),
+    0 28px 75px -12px rgba(0, 0, 0, 0.9),
+    0 0 60px -10px rgba(147, 88, 184, 0.35) !important;
+}
+
+/* Header traslúcido para modal-crystal */
+.modal-crystal-header {
+  background: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+.dark .modal-crystal-header {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Footer traslúcido para modal-crystal */
+.modal-crystal-footer {
+  background: rgba(248, 250, 252, 0.85);
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+}
+.dark .modal-crystal-footer {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+
+
+
 

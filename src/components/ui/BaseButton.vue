@@ -27,7 +27,7 @@ defineProps({
     :class="[
       success
         ? 'bg-emerald-600 shadow-lg shadow-emerald-600/30 ring-2 ring-emerald-400'
-        : 'bg-gradient-to-r from-iecm-morado to-iecm-morado-500 hover:from-iecm-morado-700 hover:to-iecm-morado-400 active:scale-[0.99] shadow-lg shadow-iecm-morado/35 hover:shadow-iecm-glow',
+        : 'bg-gradient-to-r from-[#6B2D8B] via-[#8537AD] to-[#9358B8] hover:from-[#7D34A3] hover:to-[#A364CA] active:scale-[0.99] border border-white/30 shadow-[inset_0_1.5px_2px_rgba(255,255,255,0.5),0_8px_25px_rgba(147,88,184,0.45)] hover:shadow-[inset_0_1.5px_2px_rgba(255,255,255,0.7),0_12px_32px_rgba(147,88,184,0.65)]',
       'focus-visible:ring-2 focus-visible:ring-iecm-morado-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950',
       disabled || loading ? 'opacity-65 cursor-not-allowed pointer-events-none' : ''
     ]"

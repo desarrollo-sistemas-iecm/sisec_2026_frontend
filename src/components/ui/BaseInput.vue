@@ -85,13 +85,13 @@ defineProps({
         :autocapitalize="autocapitalize"
         :spellcheck="spellcheck"
         :class="[
-          'w-full h-12 text-sm text-white placeholder-slate-500 rounded-xl transition-all duration-200 outline-none border',
-          'bg-slate-900/60 backdrop-blur-md',
+          'w-full h-12 text-sm text-white placeholder-slate-400 rounded-xl transition-all duration-200 outline-none border',
+          'bg-white/[0.07] hover:bg-white/[0.10] focus:bg-white/[0.13] backdrop-blur-md',
           $slots.iconLeft ? 'pl-11' : 'pl-4',
           $slots.iconRight ? 'pr-11' : 'pr-4',
           hasError
-            ? 'border-red-500/60 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-            : 'border-white/10 hover:border-white/20 focus:border-iecm-morado-400 focus:ring-2 focus:ring-iecm-morado-500/30 shadow-inner',
+            ? 'border-red-500/60 focus:border-red-500 focus:ring-2 focus:ring-red-500/30'
+            : 'border-white/20 hover:border-white/35 focus:border-white/60 focus:ring-2 focus:ring-[#9358B8]/40 shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.18),0_4px_12px_rgba(0,0,0,0.2)]',
           disabled ? 'opacity-50 cursor-not-allowed bg-slate-950/40' : ''
         ]"
       />

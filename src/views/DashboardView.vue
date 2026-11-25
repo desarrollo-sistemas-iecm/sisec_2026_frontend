@@ -1,120 +1,344 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
-import { LayoutDashboard, Users, CalendarCheck, BarChart2, ClipboardList, FileText, FileDown } from '@lucide/vue'
+import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
+import {
+  LayoutDashboard, Users, CalendarCheck, BarChart2, ClipboardList,
+  FileText, FileDown, CheckCircle2, AlertCircle, Clock, Send,
+  Download, ArrowUpRight, ShieldCheck, Sparkles, Filter, RefreshCw,
+  FolderArchive, Building2, CheckCircle, Flame, Calendar
+} from '@lucide/vue'
+import gsap from 'gsap'
 import { useGsapAnimations } from '../composables/useGsapAnimations.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useToast } from '../composables/useToast.js'
-import api from '../services/api.js'
-import AppCard from '../components/ui/AppCard.vue'
-import AppSelect from '../components/ui/AppSelect.vue'
-import AppButton from '../components/ui/AppButton.vue'
+import { getSocket } from '../services/socket.js'
 import { useThemeStore } from '../stores/themeStore.js'
+import api from '../services/api.js'
 
+import AppCard from '../components/ui/AppCard.vue'
+import AppButton from '../components/ui/AppButton.vue'
 import { Bar } from 'vue-chartjs'
-import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js'
+import {
+  Chart as ChartJS, Title, Tooltip, Legend, BarElement,
+  CategoryScale, LinearScale
+} from 'chart.js'
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
 
-const { animarCards } = useGsapAnimations()
 const { authStore } = useAuth()
+const toast = useToast()
 const themeStore = useThemeStore()
-const cardsRef = ref(null)
 
 const isAdministrador = computed(() => authStore.isAdmin || authStore.isSuperAdmin)
 
+// Estado reactivo de métricas
 const stats = ref({
+  total_acciones: 0,
+  sin_capturar: 0,
+  capturadas: 0,
+  finalizadas: 0,
+  total_capturadas: 0,
+  total_encuestas: 0,
   actividades_realizadas: 0,
   actividades_pendientes: 0,
-  total_intervenciones: 0,
-  total_talleres: 0,
-  total_hombres: 0,
-  total_mujeres: 0,
-  total_encuestas: 0,
   grafica_distritos: []
 })
 
 const isLoading = ref(true)
-let pollingInterval = null
+const isLiveUpdating = ref(false)
+const chartFilter = ref('todos') // 'todos' | 'top10' | 'pendientes'
 
+// Filtros temporales para la gráfica
+const filterAnio = ref('')
+const filterMes = ref('')
+const aniosDisponibles = ref([2027, 2026])
+
+const mesesCatalogo = [
+  { id: '1', nombre: 'Enero' },
+  { id: '2', nombre: 'Febrero' },
+  { id: '3', nombre: 'Marzo' },
+  { id: '4', nombre: 'Abril' },
+  { id: '5', nombre: 'Mayo' },
+  { id: '6', nombre: 'Junio' },
+  { id: '7', nombre: 'Julio' },
+  { id: '8', nombre: 'Agosto' },
+  { id: '9', nombre: 'Septiembre' },
+  { id: '10', nombre: 'Octubre' },
+  { id: '11', nombre: 'Noviembre' },
+  { id: '12', nombre: 'Diciembre' }
+]
+
+let pollingInterval = null
+let socket = null
+
+// Carga de métricas desde el Backend
 const fetchMetrics = async (showLoading = true) => {
   if (showLoading) isLoading.value = true
   try {
     const endpoint = isAdministrador.value ? '/actividades/admin/dashboard/metricas' : '/actividades/dashboard/metricas'
-    const { data } = await api.get(endpoint)
-    if (data.success) {
-      stats.value = data.data
+    const params = {}
+    if (filterAnio.value) params.anio = filterAnio.value
+    if (filterMes.value) params.mes = filterMes.value
+
+    const { data } = await api.get(endpoint, { params })
+    if (data?.success && data?.data) {
+      if (Array.isArray(data.data.anios_disponibles) && data.data.anios_disponibles.length > 0) {
+        aniosDisponibles.value = data.data.anios_disponibles
+      }
+      stats.value = {
+        total_acciones: Number(data.data.total_acciones ?? (Number(data.data.actividades_realizadas || 0) + Number(data.data.actividades_pendientes || 0))),
+        sin_capturar: Number(data.data.sin_capturar ?? data.data.actividades_pendientes ?? 0),
+        capturadas: Number(data.data.capturadas ?? 0),
+        finalizadas: Number(data.data.finalizadas ?? 0),
+        total_capturadas: Number(data.data.total_capturadas ?? data.data.actividades_realizadas ?? 0),
+        total_encuestas: Number(data.data.total_encuestas ?? 0),
+        actividades_realizadas: Number(data.data.actividades_realizadas ?? 0),
+        actividades_pendientes: Number(data.data.actividades_pendientes ?? 0),
+        grafica_distritos: data.data.grafica_distritos ?? []
+      }
     }
   } catch (error) {
-    console.error('Error cargando métricas:', error)
+    console.error('[DASHBOARD] Error cargando métricas:', error)
   } finally {
     isLoading.value = false
   }
 }
 
-const metricas = computed(() => {
-  if (isAdministrador.value) {
-    return [
-      { id: 1, title: 'Actividades Realizadas', value: stats.value.actividades_realizadas, icon: CalendarCheck, colorClass: 'text-emerald-600 bg-emerald-100 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/20' },
-      { id: 2, title: 'Talleres', value: stats.value.total_talleres, icon: BarChart2, colorClass: 'text-iecm-morado bg-iecm-morado-100 border-iecm-morado-200 dark:text-iecm-morado-300 dark:bg-iecm-morado-500/10 dark:border-iecm-morado-500/20' },
-      { id: 3, title: 'Intervenciones', value: stats.value.total_intervenciones, icon: Users, colorClass: 'text-blue-600 bg-blue-100 border-blue-200 dark:text-blue-400 dark:bg-blue-500/10 dark:border-blue-500/20' },
-      { id: 4, title: 'Encuestas', value: stats.value.total_encuestas || 0, icon: ClipboardList, colorClass: 'text-amber-600 bg-amber-100 border-amber-200 dark:text-amber-400 dark:bg-amber-500/10 dark:border-amber-500/20' }
-    ]
-  }
+watch([filterAnio, filterMes], () => {
+  fetchMetrics(true)
+})
+
+// 4 Tarjetas Radiales Tipo TailAdmin
+const radialCards = computed(() => {
+  const tot = Number(stats.value.total_acciones || 0)
+  const sinCap = Number(stats.value.sin_capturar || 0)
+  const cap = Number(stats.value.total_capturadas || 0)
+  const enc = Number(stats.value.total_encuestas || 0)
+
+  // Porcentaje de sin capturar respecto al total
+  const pctSinCap = tot > 0 ? Math.round((sinCap / tot) * 100) : 0
+  // Porcentaje de capturadas respecto al total
+  const pctCap = tot > 0 ? Math.round((cap / tot) * 100) : 0
+  
+  // Distritos con actividad
+  const distritosConActividad = (stats.value.grafica_distritos || []).filter(d => Number(d.total_acciones) > 0).length
+  const pctCobertura = Math.min(100, Math.round((distritosConActividad / 33) * 100))
+
+  // Porcentaje de encuestas respecto a meta estimada de 3 encuestas por actividad capturada
+  const pctEncuestas = cap > 0 ? Math.min(100, Math.round((enc / (cap * 3 || 1)) * 100)) : (enc > 0 ? 100 : 0)
+
   return [
-    { id: 1, title: 'Actividades Realizadas', value: stats.value.actividades_realizadas, icon: CalendarCheck, colorClass: 'text-emerald-600 bg-emerald-100 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/20' },
-    { id: 2, title: 'Actividades Pendientes', value: stats.value.actividades_pendientes,  icon: LayoutDashboard, colorClass: 'text-amber-600 bg-amber-100 border-amber-200 dark:text-amber-400 dark:bg-amber-500/10 dark:border-amber-500/20' },
-    { id: 3, title: 'Intervenciones',         value: stats.value.total_intervenciones,   icon: Users, colorClass: 'text-blue-600 bg-blue-100 border-blue-200 dark:text-blue-400 dark:bg-blue-500/10 dark:border-blue-500/20' },
-    { id: 4, title: 'Talleres',               value: stats.value.total_talleres,         icon: BarChart2, colorClass: 'text-iecm-morado bg-iecm-morado-100 border-iecm-morado-200 dark:text-iecm-morado-300 dark:bg-iecm-morado-500/10 dark:border-iecm-morado-500/20' },
+    {
+      id: 'total',
+      title: isAdministrador.value ? 'Acciones Totales' : 'Acciones Asignadas',
+      value: tot,
+      percent: pctCobertura,
+      subtitle: isAdministrador.value ? `${distritosConActividad} de 33 distritos activos` : 'Cobertura en dirección distrital',
+      icon: LayoutDashboard,
+      iconBoxClass: 'bg-purple-100 text-[#6B2D8B] border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800',
+      strokeClass: 'stroke-[#6B2D8B] dark:stroke-purple-400',
+      bottomBarClass: 'bg-[#6B2D8B]',
+      badge: 'Cobertura',
+      badgeClass: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+    },
+    {
+      id: 'sin_capturar',
+      title: 'Sin Capturar',
+      value: sinCap,
+      percent: pctSinCap,
+      subtitle: `${pctSinCap}% pendientes de evidencia`,
+      icon: Clock,
+      iconBoxClass: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+      strokeClass: 'stroke-amber-500 dark:stroke-amber-400',
+      bottomBarClass: 'bg-amber-500',
+      badge: 'Pendiente',
+      badgeClass: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+    },
+    {
+      id: 'capturadas',
+      title: 'Capturadas / Finalizadas',
+      value: cap,
+      percent: pctCap,
+      subtitle: `${pctCap}% con expediente oficial`,
+      icon: CheckCircle2,
+      iconBoxClass: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
+      strokeClass: 'stroke-emerald-500 dark:stroke-emerald-400',
+      bottomBarClass: 'bg-emerald-500',
+      badge: 'En Regla',
+      badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+    },
+    {
+      id: 'encuestas',
+      title: 'Encuestas Respondidas',
+      value: enc,
+      percent: pctEncuestas,
+      subtitle: 'Instrumentos de satisfacción en campo',
+      icon: ClipboardList,
+      iconBoxClass: 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800',
+      strokeClass: 'stroke-indigo-500 dark:stroke-indigo-400',
+      bottomBarClass: 'bg-indigo-500',
+      badge: 'Satisfacción',
+      badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
+    }
   ]
 })
 
-const chartData = computed(() => {
-  const distritos = stats.value.grafica_distritos || []
-  const isDark = themeStore.isDark
+// Filtro de Distritos para la gráfica
+const filteredDistritos = computed(() => {
+  const list = [...(stats.value.grafica_distritos || [])]
+  if (chartFilter.value === 'top10') {
+    return list.sort((a, b) => Number(b.total_acciones) - Number(a.total_acciones)).slice(0, 10)
+  }
+  if (chartFilter.value === 'pendientes') {
+    const conPendientes = list.filter(d => Number(d.sin_capturar) > 0)
+    return conPendientes.length > 0 ? conPendientes : list.slice(0, 10)
+  }
+  return list.sort((a, b) => a.idsede - b.idsede)
+})
+
+// Métricas de apoyo en la cabecera de la gráfica
+const statsDistritales = computed(() => {
+  const list = stats.value.grafica_distritos || []
+  const conAcciones = list.filter(d => Number(d.total_acciones) > 0)
+  const top = [...list].sort((a, b) => Number(b.total_acciones) - Number(a.total_acciones))[0]
+  const totalAccionesDistritos = list.reduce((acc, d) => acc + Number(d.total_acciones || 0), 0)
+  const totalFinalizadasDistritos = list.reduce((acc, d) => acc + Number(d.finalizadas || 0), 0)
+  const totalCapturadasDistritos = list.reduce((acc, d) => acc + Number(d.capturadas || 0), 0)
+  const tasaCumplimiento = totalAccionesDistritos > 0 
+    ? Math.round(((totalFinalizadasDistritos + totalCapturadasDistritos) / totalAccionesDistritos) * 100) 
+    : 0
+
   return {
-    labels: distritos.map(d => `Dtto ${d.idsede}`),
-    datasets: [{
-      label: 'Actividades Realizadas',
-      data: distritos.map(d => d.total_actividades),
-      backgroundColor: isDark ? 'rgba(155, 89, 200, 0.85)' : 'rgba(107, 45, 139, 0.8)',
-      borderRadius: 4
-    }]
+    distritosActivos: conAcciones.length,
+    topDistrito: top ? (top.idsede === 0 ? 'Central' : `Dtto ${top.idsede}`) : 'N/A',
+    topAcciones: top ? top.total_acciones : 0,
+    totalAccionesDistritos,
+    totalFinalizadasDistritos,
+    totalCapturadasDistritos,
+    tasaCumplimiento
+  }
+})
+
+// Configuración Chart.js de Avance por Distrito
+const chartData = computed(() => {
+  const distritos = filteredDistritos.value
+  const labels = distritos.map(d => d.idsede === 0 ? 'Central' : `D${d.idsede}`)
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Finalizadas (Concluidas)',
+        data: distritos.map(d => Number(d.finalizadas || 0)),
+        backgroundColor: '#10B981',
+        borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 4, bottomRight: 4 },
+        barPercentage: 0.72,
+        categoryPercentage: 0.82
+      },
+      {
+        label: 'Capturadas (En proceso)',
+        data: distritos.map(d => Number(d.capturadas || 0)),
+        backgroundColor: '#8B5CF6',
+        borderRadius: 0,
+        barPercentage: 0.72,
+        categoryPercentage: 0.82
+      },
+      {
+        label: 'Sin Capturar (Pendientes)',
+        data: distritos.map(d => Number(d.sin_capturar || 0)),
+        backgroundColor: '#F59E0B',
+        borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
+        barPercentage: 0.72,
+        categoryPercentage: 0.82
+      }
+    ]
   }
 })
 
 const chartOptions = computed(() => {
   const isDark = themeStore.isDark
   const textColor = isDark ? '#94a3b8' : '#64748b'
-  const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'
-  
+  const gridColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)'
+
   return {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { 
-        beginAtZero: true, 
-        ticks: { stepSize: 1, color: textColor },
-        grid: { color: gridColor },
-        title: {
-          display: true,
-          text: 'Actividades Realizadas',
+    interaction: {
+      mode: 'index',
+      intersect: false
+    },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        align: 'end',
+        labels: {
           color: textColor,
-          font: { size: 12, weight: 'bold' }
+          boxWidth: 10,
+          boxHeight: 10,
+          usePointStyle: true,
+          pointStyle: 'circle',
+          font: { size: 11, weight: 'bold' }
         }
       },
-      x: { 
-        ticks: { maxRotation: 45, minRotation: 45, color: textColor },
-        grid: { color: gridColor }
+      tooltip: {
+        backgroundColor: isDark ? 'rgba(15, 10, 26, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+        titleColor: isDark ? '#ffffff' : '#0f172a',
+        bodyColor: isDark ? '#e2e8f0' : '#334155',
+        borderColor: isDark ? 'rgba(139, 92, 246, 0.3)' : 'rgba(107, 45, 139, 0.2)',
+        borderWidth: 1,
+        padding: 12,
+        boxPadding: 6,
+        usePointStyle: true,
+        callbacks: {
+          title: (items) => {
+            if (!items?.length) return ''
+            const idx = items[0].dataIndex
+            const d = filteredDistritos.value[idx]
+            return d ? (d.idsede === 0 ? 'Oficinas Centrales' : `Dirección Distrital ${d.idsede}`) : ''
+          },
+          afterBody: (items) => {
+            if (!items?.length) return ''
+            const idx = items[0].dataIndex
+            const d = filteredDistritos.value[idx]
+            if (!d) return ''
+            const tot = Number(d.total_acciones || 0)
+            const fin = Number(d.finalizadas || 0)
+            const cap = Number(d.capturadas || 0)
+            const sin = Number(d.sin_capturar || 0)
+            const pct = tot > 0 ? Math.round(((fin + cap) / tot) * 100) : 0
+            return `\nFinalizadas: ${fin}\nCapturadas: ${cap}\nSin Capturar: ${sin}\nTotal Acciones: ${tot}\nAvance Distrital: ${pct}%\nEncuestas Registradas: ${d.total_encuestas || 0}`
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        stacked: true,
+        grid: { display: false },
+        ticks: { color: textColor, font: { size: 10, weight: 'bold' } }
+      },
+      y: {
+        stacked: true,
+        beginAtZero: true,
+        grid: { color: gridColor },
+        ticks: { stepSize: 1, color: textColor, font: { size: 10 } },
+        title: {
+          display: true,
+          text: 'Total de Acciones',
+          color: textColor,
+          font: { size: 11, weight: 'bold' }
+        }
       }
     }
   }
 })
 
-const categoriasFormatos = [
+// Catálogo de Formatos Oficiales 2027
+const categoriasFormatos = ref([
   {
     id: 1,
     nombre: 'Servicio Social',
+    icono: '🎓',
     archivos: [
       { nombre: 'Formato de registro', archivo: 'Anexo01_SS.docx' },
       { nombre: 'Manifestación de no ser beneficiario/a de alguna beca que impida recibir el apoyo económico', archivo: 'Anexo02_SS.docx' },
@@ -130,6 +354,7 @@ const categoriasFormatos = [
   {
     id: 2,
     nombre: 'Acciones Educativas',
+    icono: '📚',
     archivos: [
       { nombre: 'Formato para el registro de asistentes a talleres de formación ciudadana e intervenciones educativas', archivo: 'Anexo01_AE.docx' },
       { nombre: 'Formato para el registro del desarrollo de talleres de formación ciudadana e intervenciones educativas', archivo: 'Anexo02_AE.docx' },
@@ -140,13 +365,15 @@ const categoriasFormatos = [
   {
     id: 3,
     nombre: 'Ludoteca Cívica',
+    icono: '🎲',
     archivos: [
       { nombre: 'Formato para la gestión de acciones educativas de la Ludoteca Cívica dirigidas a la comunidad educativa y otros públicos', archivo: 'luci.docx' }
     ]
   },
   {
     id: 4,
-    nombre: 'Vínculo Institucional (Demarcaciones Territoriales)',
+    nombre: 'Vínculo Institucional (Demarcaciones)',
+    icono: '🏛️',
     archivos: [
       { nombre: 'Modelo de Convenio', archivo: 'Anexo01_DT.docx' },
       { nombre: 'Modelo de Programa Anual de Trabajo', archivo: 'Anexo02_DT.docx' },
@@ -155,19 +382,37 @@ const categoriasFormatos = [
   },
   {
     id: 5,
-    nombre: 'Lineamientos',
+    nombre: 'Lineamientos de Protección',
+    icono: '🛡️',
     archivos: [
       { nombre: 'Carta de autorización expresa y cesión de derechos_Padres', archivo: 'lineamientos1.docx' },
       { nombre: 'Formato de autorización expresa de las niñas, niños y adolescentes', archivo: 'lineamientos2.docx' }
     ]
   }
-]
+])
 
-const selectedCategoriaId = ref('')
-const selectedCategoria = computed(() => categoriasFormatos.find(c => c.id === Number(selectedCategoriaId.value)))
+const selectedCategoriaId = ref(1)
+const selectedCategoria = computed(() => categoriasFormatos.value.find(c => c.id === Number(selectedCategoriaId.value)))
+
+const totalFormatosDisponibles = computed(() => {
+  return categoriasFormatos.value.reduce((acc, cat) => acc + (cat.archivos?.length || 0), 0)
+})
+
+const fetchFormatosActivos = async () => {
+  try {
+    const { data } = await api.get('/formatos')
+    if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+      categoriasFormatos.value = data.data
+      if (!selectedCategoriaId.value || !data.data.some(c => c.id === Number(selectedCategoriaId.value))) {
+        selectedCategoriaId.value = data.data[0].id
+      }
+    }
+  } catch (err) {
+    console.warn('[DASHBOARD] No se pudieron sincronizar los formatos activos:', err.message)
+  }
+}
 
 const descargando = ref({})
-
 const descargarArchivo = async (nombreArchivo) => {
   descargando.value[nombreArchivo] = true
   try {
@@ -186,153 +431,493 @@ const descargarArchivo = async (nombreArchivo) => {
     a.click()
     URL.revokeObjectURL(url)
 
-    useToast().success(`Descargando ${nombreArchivo}`)
+    toast.success(`Descargando ${nombreArchivo}`)
   } catch (error) {
-    useToast().error('No se pudo descargar el archivo. Intenta de nuevo.')
+    toast.error('No se pudo descargar el archivo. Intenta de nuevo.')
   } finally {
     descargando.value[nombreArchivo] = false
   }
 }
 
-onMounted(async () => {
-  await fetchMetrics()
-  if (cardsRef.value && cardsRef.value.children) {
-    animarCards(cardsRef.value.children)
-  }
+// Handlers de WebSockets para Actualización en Vivo
+const handleLiveUpdate = (payload) => {
+  isLiveUpdating.value = true
+  fetchMetrics(false)
   
-  // Polling de 60 segundos
+  nextTick(() => {
+    gsap.fromTo('.stat-radial-card', 
+      { scale: 0.98 }, 
+      { scale: 1, duration: 0.4, ease: 'back.out(1.5)' }
+    )
+    setTimeout(() => {
+      isLiveUpdating.value = false
+    }, 1500)
+  })
+}
+
+const handleFormatosUpdate = () => {
+  fetchFormatosActivos()
+}
+
+// Animación GSAP al cambiar de pestaña de formatos
+watch(selectedCategoriaId, () => {
+  nextTick(() => {
+    gsap.from('.formato-card-item', {
+      opacity: 0,
+      y: 14,
+      stagger: 0.04,
+      duration: 0.35,
+      ease: 'power2.out',
+      clearProps: 'all'
+    })
+  })
+})
+
+onMounted(() => {
+  fetchMetrics()
+  fetchFormatosActivos()
+
+  // Conexión reactiva a Sockets
+  try {
+    socket = getSocket()
+    if (socket) {
+      socket.on('accion:creada', handleLiveUpdate)
+      socket.on('accion:capturada', handleLiveUpdate)
+      socket.on('accion:finalizada', handleLiveUpdate)
+      socket.on('accion:reprogramada', handleLiveUpdate)
+      socket.on('accion:cancelada', handleLiveUpdate)
+      socket.on('encuesta:registrada', handleLiveUpdate)
+      socket.on('notificacion:nueva', handleLiveUpdate)
+      socket.on('formato:actualizado', handleFormatosUpdate)
+      socket.on('formatos:sync', handleFormatosUpdate)
+    }
+  } catch (err) {
+    console.warn('[DASHBOARD WS] No se pudo inicializar sockets:', err)
+  }
+
+  // Animación inicial GSAP de las tarjetas
+  nextTick(() => {
+    gsap.from('.stat-radial-card', {
+      opacity: 0,
+      y: 20,
+      scale: 0.95,
+      stagger: 0.08,
+      duration: 0.5,
+      ease: 'power3.out',
+      clearProps: 'all'
+    })
+  })
+
+  // Polling de respaldo cada 60s
   pollingInterval = setInterval(() => {
     fetchMetrics(false)
   }, 60000)
 })
 
-import { onUnmounted } from 'vue'
 onUnmounted(() => {
   if (pollingInterval) clearInterval(pollingInterval)
+  if (socket) {
+    socket.off('accion:creada', handleLiveUpdate)
+    socket.off('accion:capturada', handleLiveUpdate)
+    socket.off('accion:finalizada', handleLiveUpdate)
+    socket.off('accion:reprogramada', handleLiveUpdate)
+    socket.off('accion:cancelada', handleLiveUpdate)
+    socket.off('encuesta:registrada', handleLiveUpdate)
+    socket.off('notificacion:nueva', handleLiveUpdate)
+    socket.off('formato:actualizado', handleFormatosUpdate)
+    socket.off('formatos:sync', handleFormatosUpdate)
+  }
 })
 </script>
 
 <template>
-  <div class="space-y-8">
-    <header>
-      <h1 class="text-3xl font-bold text-slate-900 tracking-tight dark:text-white">Bienvenido, {{ authStore.user?.nombre || 'Usuario' }}</h1>
-      <p class="mt-2 text-slate-500 text-lg dark:text-slate-400">
-        Aquí tienes un resumen general del progreso de tus actividades.
-      </p>
+  <div class="space-y-8 pb-10">
+    <!-- Encabezado con Indicador de Sockets en Vivo -->
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight dark:text-white flex items-center gap-3">
+          <span>Bienvenido, {{ authStore.user?.nombre || authStore.user?.usuario || 'Administrador' }}</span>
+        </h1>
+        <p class="mt-1 text-slate-500 text-sm dark:text-slate-400">
+          Tablero de control institucional en tiempo real — Monitoreo operativo distrital y captura 2027.
+        </p>
+      </div>
+
+      <!-- Badge de Estado en Vivo y Botón de Refresco -->
+      <div class="flex items-center gap-2 self-start sm:self-auto">
+        <span 
+          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-xs"
+          :class="isLiveUpdating 
+            ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 animate-pulse' 
+            : 'bg-emerald-50 text-emerald-700 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'"
+        >
+          <span class="w-2 h-2 rounded-full" :class="isLiveUpdating ? 'bg-amber-500' : 'bg-emerald-500 animate-ping'"></span>
+          <span>{{ isLiveUpdating ? 'Actualizando datos...' : 'Actualización en vivo' }}</span>
+        </span>
+
+        <button
+          type="button"
+          @click="fetchMetrics(true)"
+          class="p-2 rounded-xl text-slate-500 hover:text-[#6B2D8B] dark:text-slate-400 dark:hover:text-white hover:bg-purple-50 dark:hover:bg-purple-950/40 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer"
+          title="Recargar métricas ahora"
+        >
+          <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': isLoading }" />
+        </button>
+      </div>
     </header>
 
-    <div ref="cardsRef" class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-      <AppCard 
-        v-for="metrica in metricas" 
-        :key="metrica.id" 
-        class="dashboard-card relative overflow-hidden group"
+    <!-- 4 CARDS CON RADIALS TIPO TAILADMIN -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div 
+        v-for="card in radialCards" 
+        :key="card.id"
+        class="stat-radial-card p-5 rounded-2xl bg-white/95 dark:bg-[#120a1f]/90 border border-slate-200/80 dark:border-purple-900/40 shadow-xl shadow-purple-900/5 hover:-translate-y-1 hover:shadow-2xl hover:border-purple-400/50 transition-all duration-300 relative overflow-hidden group flex flex-col justify-between"
       >
-        <div class="flex flex-col h-full min-h-[180px] justify-between relative z-10">
-          <!-- Icono de agua decorativo -->
-          <component :is="metrica.icon" class="absolute -bottom-6 -right-4 w-32 h-32 opacity-[0.03] text-slate-900 dark:text-white pointer-events-none" />
-          
-          <div class="flex justify-between items-start">
-            <div :class="['w-14 h-14 rounded-2xl flex items-center justify-center border shadow-sm', metrica.colorClass]">
-              <component :is="metrica.icon" class="w-7 h-7" />
-            </div>
+        <!-- Fila superior: Icono a la izquierda y Radial TailAdmin a la derecha -->
+        <div class="flex items-center justify-between">
+          <div :class="['w-12 h-12 rounded-xl flex items-center justify-center shadow-xs border', card.iconBoxClass]">
+            <component :is="card.icon" class="w-6 h-6" />
           </div>
-          
-          <div class="mt-auto pt-6">
-            <p class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 dark:text-slate-400">{{ metrica.title }}</p>
-            <p class="text-5xl font-black text-slate-900 tracking-tight dark:text-white">
-              <span v-if="isLoading" class="animate-pulse bg-slate-200 dark:bg-slate-800 text-transparent rounded">0000</span>
-              <span v-else>{{ metrica.value }}</span>
+
+          <!-- TailAdmin Radial Ring Progress -->
+          <div class="relative w-14 h-14 shrink-0 flex items-center justify-center">
+            <svg class="w-14 h-14 -rotate-90" viewBox="0 0 64 64">
+              <!-- Círculo base de fondo -->
+              <circle
+                cx="32" cy="32" r="26"
+                fill="none"
+                class="stroke-slate-100 dark:stroke-slate-800/80"
+                stroke-width="5"
+              />
+              <!-- Círculo animado de avance -->
+              <circle
+                cx="32" cy="32" r="26"
+                fill="none"
+                :class="card.strokeClass"
+                stroke-width="5"
+                stroke-linecap="round"
+                :stroke-dasharray="163.36"
+                :stroke-dashoffset="163.36 - (163.36 * card.percent) / 100"
+                class="transition-all duration-1000 ease-out"
+              />
+            </svg>
+            <!-- Porcentaje en el centro del radial -->
+            <span class="absolute font-black text-[11px] text-slate-800 dark:text-white font-mono">
+              {{ card.percent }}%
+            </span>
+          </div>
+        </div>
+
+        <!-- Sección de valor y etiquetas -->
+        <div class="mt-4">
+          <span class="text-[11px] font-bold text-slate-400 dark:text-purple-300/70 uppercase tracking-wider block">
+            {{ card.title }}
+          </span>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span class="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+              <span v-if="isLoading" class="animate-pulse bg-slate-200 dark:bg-slate-800 text-transparent rounded">000</span>
+              <span v-else>{{ card.value }}</span>
+            </span>
+            <span v-if="card.badge" :class="['text-[11px] font-bold px-2 py-0.5 rounded-full border shadow-xs', card.badgeClass]">
+              {{ card.badge }}
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium truncate">
+            {{ card.subtitle }}
+          </p>
+        </div>
+
+        <!-- Línea de acento inferior en hover -->
+        <div :class="['absolute bottom-0 inset-x-0 h-1 transition-all duration-300 opacity-60 group-hover:opacity-100', card.bottomBarClass]"></div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN: GRÁFICA DE AVANCE POR DISTRITO TERRITORIAL (EN VIVO) -->
+    <section v-if="isAdministrador" class="space-y-3">
+      <div class="rounded-2xl bg-white/95 dark:bg-[#120a1f]/90 border border-slate-200/80 dark:border-purple-900/40 shadow-xl shadow-purple-900/5 p-6 space-y-5">
+        
+        <!-- Cabecera de la Gráfica y Controles -->
+        <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 border-b border-slate-100 dark:border-slate-800/80 pb-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <BarChart2 class="w-5 h-5 text-[#6B2D8B] dark:text-purple-400" />
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">Avance por Distrito Territorial</h2>
+              <span class="text-[11px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/70 px-2.5 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
+                33 Sedes
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Desglose acumulado: <span class="text-emerald-600 dark:text-emerald-400 font-bold">Finalizadas (verde)</span>, <span class="text-purple-600 dark:text-purple-400 font-bold">Capturadas en proceso (morado)</span> y <span class="text-amber-600 dark:text-amber-400 font-bold">Sin Capturar (ámbar)</span>.
             </p>
           </div>
-        </div>
-        
-        <!-- Hover highlight (bottom edge) -->
-        <div class="absolute bottom-0 inset-x-0 h-1 bg-iecm-morado transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300"></div>
-      </AppCard>
-    </div>
 
-    <!-- Gráfica Admin -->
-    <div v-if="isAdministrador" class="mt-8">
-      <AppCard>
-        <template #header>
-          <div class="flex justify-between items-center">
-            <h2 class="text-lg font-semibold text-white">Avance por Distrito Territorial</h2>
-            <span class="text-xs text-purple-200 dark:text-slate-400">Actualización en vivo</span>
-          </div>
-        </template>
-        <div class="h-[400px] p-4">
-           <Bar v-if="!isLoading && chartData.labels?.length > 0" :key="themeStore.isDark" :data="chartData" :options="chartOptions" />
-           <div v-else class="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
-             <BarChart2 class="w-12 h-12 mb-3 opacity-30 animate-pulse" />
-             <p>Cargando métricas de distritos...</p>
-           </div>
-        </div>
-      </AppCard>
-    </div>
-
-    <!-- Nueva sección de formatos -->
-    <section class="dashboard-formatos mt-10">
-      <AppCard>
-        <template #header>
-          <div class="flex items-center gap-2">
-            <FileText class="w-5 h-5 text-purple-200 dark:text-iecm-morado-400" />
-            <h2 class="text-lg font-semibold text-white">Formatos y Documentos Oficiales</h2>
-          </div>
-        </template>
-
-        <div class="p-6">
-          <p class="text-slate-500 mb-6 dark:text-slate-400">Selecciona una categoría para descargar los documentos oficiales vigentes.</p>
-          
-          <div class="max-w-md mb-8">
-            <AppSelect v-model="selectedCategoriaId" label="Categoría de Formatos">
-              <option value="" disabled>Selecciona una categoría...</option>
-              <option v-for="cat in categoriasFormatos" :key="cat.id" :value="cat.id">{{ cat.nombre }}</option>
-            </AppSelect>
-          </div>
-
-          <!-- Estado vacío si no hay selección -->
-          <div v-if="!selectedCategoria" class="flex flex-col items-center justify-center py-12 text-center bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-white/5 border-dashed">
-            <div class="w-16 h-16 bg-white dark:bg-slate-900 rounded-2xl flex items-center justify-center border dark:border-white/10 shadow-sm text-slate-400 dark:text-slate-500 mb-4">
-              <FileText class="w-8 h-8" />
-            </div>
-            <h3 class="text-lg font-medium text-slate-900 dark:text-white">Ninguna categoría seleccionada</h3>
-            <p class="text-slate-500 dark:text-slate-400 max-w-sm mt-1">Selecciona una categoría en el menú superior para ver y descargar los formatos disponibles.</p>
-          </div>
-
-          <!-- Lista de archivos -->
-          <div v-else class="space-y-4">
-            <div v-for="archivo in selectedCategoria.archivos" :key="archivo.archivo" class="flex items-center justify-between p-4 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl hover:border-iecm-morado-300 dark:hover:border-iecm-morado-600 transition-colors shadow-sm">
-              <div class="flex items-center gap-4">
-                <div class="w-12 h-12 bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center shrink-0">
-                  <FileDown class="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 class="font-bold text-slate-800 dark:text-slate-200">{{ archivo.nombre }}</h4>
-                  <p class="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">{{ archivo.archivo }}</p>
-                </div>
-              </div>
-              <AppButton 
-                variant="primary" 
-                size="sm" 
-                :disabled="descargando[archivo.archivo]" 
-                @click="descargarArchivo(archivo.archivo)"
+          <!-- Controles y Filtros: Año, Mes y Vista de Distritos -->
+          <div class="flex flex-wrap items-center gap-2 self-start xl:self-auto">
+            <!-- Filtro Año -->
+            <div class="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs">
+              <Calendar class="w-3.5 h-3.5 text-[#6B2D8B] dark:text-purple-400 shrink-0" />
+              <select
+                v-model="filterAnio"
+                class="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-hidden cursor-pointer"
+                title="Filtrar avance por año"
               >
-                <span v-if="descargando[archivo.archivo]" class="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin mr-2"></span>
-                <span v-else class="mr-2"><FileDown class="w-4 h-4" /></span>
-                Descargar
+                <option value="">Todos los Años</option>
+                <option v-for="y in aniosDisponibles" :key="y" :value="String(y)">{{ y }}</option>
+              </select>
+            </div>
+
+            <!-- Filtro Mes -->
+            <div class="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs">
+              <Filter class="w-3.5 h-3.5 text-[#6B2D8B] dark:text-purple-400 shrink-0" />
+              <select
+                v-model="filterMes"
+                class="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-hidden cursor-pointer"
+                title="Filtrar avance por mes"
+              >
+                <option value="">Todos los Meses</option>
+                <option v-for="m in mesesCatalogo" :key="m.id" :value="m.id">{{ m.nombre }}</option>
+              </select>
+            </div>
+
+            <!-- Vista de Distritos -->
+            <div class="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800">
+              <button
+                type="button"
+                @click="chartFilter = 'todos'"
+                :class="[
+                  'px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer',
+                  chartFilter === 'todos' 
+                    ? 'bg-white dark:bg-[#6B2D8B] text-slate-900 dark:text-white shadow-xs' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ]"
+              >
+                Todos (1-33)
+              </button>
+              <button
+                type="button"
+                @click="chartFilter = 'top10'"
+                :class="[
+                  'px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer',
+                  chartFilter === 'top10' 
+                    ? 'bg-white dark:bg-[#6B2D8B] text-slate-900 dark:text-white shadow-xs' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ]"
+              >
+                Top 10 Activos
+              </button>
+              <button
+                type="button"
+                @click="chartFilter = 'pendientes'"
+                :class="[
+                  'px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer',
+                  chartFilter === 'pendientes' 
+                    ? 'bg-white dark:bg-[#6B2D8B] text-slate-900 dark:text-white shadow-xs' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ]"
+              >
+                Con Pendientes
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tira de Mini Métricas Resumen -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 py-2 px-4 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/30 text-xs">
+          <div>
+            <span class="text-slate-400 dark:text-slate-500 font-semibold block text-[10px] uppercase">Distritos con Actividad</span>
+            <span class="font-bold text-slate-800 dark:text-purple-200 text-sm font-mono">
+              {{ statsDistritales.distritosActivos }} de 33 sedes
+            </span>
+          </div>
+          <div>
+            <span class="text-slate-400 dark:text-slate-500 font-semibold block text-[10px] uppercase">Distrito con Más Acciones</span>
+            <span class="font-bold text-[#6B2D8B] dark:text-purple-300 text-sm font-mono">
+              {{ statsDistritales.topDistrito }} ({{ statsDistritales.topAcciones }})
+            </span>
+          </div>
+          <div>
+            <span class="text-slate-400 dark:text-slate-500 font-semibold block text-[10px] uppercase">Finalizadas / Capturadas</span>
+            <span class="font-bold text-slate-800 dark:text-white text-sm font-mono">
+              <span class="text-emerald-600 dark:text-emerald-400">{{ statsDistritales.totalFinalizadasDistritos }} fin</span> / 
+              <span class="text-purple-600 dark:text-purple-300">{{ statsDistritales.totalCapturadasDistritos }} cap</span>
+            </span>
+          </div>
+          <div>
+            <span class="text-slate-400 dark:text-slate-500 font-semibold block text-[10px] uppercase">Tasa Global de Cumplimiento</span>
+            <span class="font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono">
+              {{ statsDistritales.tasaCumplimiento }}% avance
+            </span>
+          </div>
+        </div>
+
+        <!-- Contenedor del Lienzo de la Gráfica -->
+        <div class="h-[380px] w-full pt-2">
+          <Bar 
+            v-if="!isLoading && chartData.labels?.length > 0" 
+            :key="`${themeStore.isDark}-${chartFilter}-${filterAnio}-${filterMes}`" 
+            :data="chartData" 
+            :options="chartOptions" 
+          />
+          <div v-else class="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+            <BarChart2 class="w-12 h-12 mb-3 opacity-30 animate-pulse text-[#6B2D8B]" />
+            <p class="text-sm font-medium">Calculando métricas distritales en tiempo real...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN: FORMATOS Y DOCUMENTOS OFICIALES CON RADIAL TAILADMIN -->
+    <section class="space-y-4">
+      <div class="rounded-2xl bg-white/95 dark:bg-[#120a1f]/90 border border-slate-200/80 dark:border-purple-900/40 shadow-xl shadow-purple-900/5 p-6 space-y-6">
+        
+        <!-- Header con Widget Radial TailAdmin de Disponibilidad -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 p-5 rounded-2xl bg-gradient-to-br from-purple-50/80 via-white to-purple-50/40 dark:from-purple-950/40 dark:via-[#140b24] dark:to-purple-950/20 border border-purple-200/70 dark:border-purple-900/50">
+          <div class="space-y-1.5 max-w-xl">
+            <div class="flex items-center gap-2">
+              <FolderArchive class="w-5 h-5 text-[#6B2D8B] dark:text-purple-300" />
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">
+                Formatos y Documentos Oficiales Institucionales
+              </h2>
+            </div>
+            <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              Repositorio normativo de anexos, convenios y formatos de registro autorizados para las 33 Direcciones Distritales y Oficinas Centrales del IECM.
+            </p>
+          </div>
+
+          <!-- Widget Radial TailAdmin: Disponibilidad de Formatos -->
+          <div class="flex items-center gap-4 bg-white/90 dark:bg-purple-950/60 px-4 py-3 rounded-2xl border border-purple-200/80 dark:border-purple-800/60 shadow-xs shrink-0 self-start md:self-auto">
+            <div class="relative w-14 h-14 shrink-0 flex items-center justify-center">
+              <svg class="w-14 h-14 -rotate-90" viewBox="0 0 64 64">
+                <circle
+                  cx="32" cy="32" r="26"
+                  fill="none"
+                  class="stroke-slate-100 dark:stroke-slate-800"
+                  stroke-width="5"
+                />
+                <circle
+                  cx="32" cy="32" r="26"
+                  fill="none"
+                  class="stroke-[#6B2D8B] dark:stroke-purple-400"
+                  stroke-width="5"
+                  stroke-linecap="round"
+                  stroke-dasharray="163.36"
+                  stroke-dashoffset="0"
+                />
+              </svg>
+              <span class="absolute font-black text-xs text-[#6B2D8B] dark:text-purple-300 font-mono">
+                100%
+              </span>
+            </div>
+
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400 block">
+                Disponibilidad Oficial
+              </span>
+              <p class="text-sm font-extrabold text-slate-900 dark:text-white font-mono">
+                {{ totalFormatosDisponibles }} de {{ totalFormatosDisponibles }} en servidor
+              </p>
+              <span class="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
+                <ShieldCheck class="w-3.5 h-3.5" /> Normativa Vigente
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pestañas de Categorías (Pills Interactivas) -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
+          <button
+            v-for="cat in categoriasFormatos"
+            :key="cat.id"
+            type="button"
+            @click="selectedCategoriaId = cat.id"
+            :class="[
+              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-2 shadow-xs border',
+              Number(selectedCategoriaId) === Number(cat.id)
+                ? 'bg-gradient-to-r from-[#6B2D8B] to-purple-600 text-white border-transparent shadow-purple-900/20 scale-[1.02]'
+                : 'bg-slate-50 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-700'
+            ]"
+          >
+            <span class="text-sm">{{ cat.icono || '📄' }}</span>
+            <span>{{ cat.nombre }}</span>
+            <span 
+              :class="[
+                'px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold',
+                Number(selectedCategoriaId) === Number(cat.id)
+                  ? 'bg-white/20 text-white'
+                  : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
+              ]"
+            >
+              {{ cat.archivos?.length || 0 }}
+            </span>
+          </button>
+        </div>
+
+        <!-- Grid de Tarjetas de Formatos con Animación GSAP Stagger -->
+        <div v-if="selectedCategoria && selectedCategoria.archivos?.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            v-for="archivo in selectedCategoria.archivos"
+            :key="archivo.archivo"
+            class="formato-card-item p-4 rounded-xl bg-slate-50/80 dark:bg-[#160d26]/80 border border-slate-200/80 dark:border-purple-900/30 hover:border-[#6B2D8B]/50 dark:hover:border-purple-500/50 hover:shadow-lg transition-all duration-200 flex flex-col justify-between group"
+          >
+            <div class="space-y-2">
+              <div class="flex items-start justify-between gap-3">
+                <div class="w-10 h-10 rounded-xl bg-purple-100 text-[#6B2D8B] dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center justify-center shrink-0">
+                  <FileText class="w-5 h-5" />
+                </div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 truncate max-w-[150px]">
+                  {{ archivo.archivo }}
+                </span>
+              </div>
+              <h3 class="text-xs font-bold text-slate-800 dark:text-slate-100 line-clamp-2 leading-snug">
+                {{ archivo.nombre }}
+              </h3>
+            </div>
+
+            <div class="pt-3 mt-3 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between">
+              <span class="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                <CheckCircle class="w-3 h-3" /> Disponible
+              </span>
+
+              <AppButton
+                variant="primary"
+                size="sm"
+                :disabled="descargando[archivo.archivo]"
+                @click="descargarArchivo(archivo.archivo)"
+                class="bg-[#6B2D8B] hover:bg-[#582472] text-white px-3 py-1.5 text-xs font-bold rounded-lg shadow-xs"
+              >
+                <template #icon>
+                  <span v-if="descargando[archivo.archivo]" class="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
+                  <FileDown v-else class="w-3.5 h-3.5" />
+                </template>
+                <span>{{ descargando[archivo.archivo] ? 'Descargando...' : 'Descargar' }}</span>
               </AppButton>
             </div>
           </div>
         </div>
-      </AppCard>
+
+        <div v-else class="text-center py-12 text-slate-400 dark:text-slate-500">
+          <FolderArchive class="w-10 h-10 mx-auto opacity-30 mb-2" />
+          <p class="text-xs font-semibold">No se encontraron formatos en esta categoría.</p>
+        </div>
+
+      </div>
     </section>
 
   </div>
 </template>
 
 <style scoped>
-/* Asegura que GSAP agarre bien los elementos al montar */
-.dashboard-card {
-  visibility: visible;
+.custom-scrollbar::-webkit-scrollbar {
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(107, 45, 139, 0.2);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 45, 139, 0.4);
 }
 </style>

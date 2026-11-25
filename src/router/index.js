@@ -14,7 +14,7 @@ const routes = [
   { path: '/', name: 'dashboard', component: DashboardView, meta: { requiresAuth: true, roles: [2, 3] } },
   { path: '/programacion', name: 'programacion', component: ProgramacionView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
   { path: '/captura', name: 'captura', component: CapturaView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
-  { path: '/encuesta', name: 'encuesta', component: EncuestaView, meta: { requiresAuth: true, roles: [2, 3] } },
+  { path: '/encuesta', name: 'encuesta', component: EncuestaView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
   { path: '/reportes', name: 'reportes', component: ReportesView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
   { path: '/notificaciones', name: 'notificaciones', component: NotificacionesView, meta: { requiresAuth: true, roles: [1, 2, 3] } },
   { 
@@ -31,7 +31,7 @@ const routes = [
       { path: 'usuarios', name: 'admin-usuarios', component: () => import('../views/admin/UsuariosView.vue'), meta: { roles: [3] } },
       { path: 'restricciones', name: 'admin-restricciones', component: () => import('../views/admin/RestriccionesView.vue'), meta: { roles: [2, 3] } },
       { path: 'archivos', name: 'admin-archivos', component: () => import('../views/admin/ArchivosView.vue'), meta: { roles: [2, 3] } },
-      { path: 'formatos', name: 'admin-formatos', component: () => import('../views/admin/FormatosView.vue'), meta: { roles: [2, 3] } },
+      { path: 'formatos', name: 'admin-formatos', component: () => import('../views/admin/FormatosView.vue'), meta: { roles: [3] } },
       { path: 'cursos', name: 'admin-cursos', component: () => import('../views/admin/CursosView.vue'), meta: { roles: [2, 3] } },
       { path: 'mensajes', name: 'admin-mensajes', component: () => import('../views/admin/MensajesPredeterminadosView.vue'), meta: { roles: [3] } }
     ]
@@ -43,6 +43,30 @@ const router = createRouter({
   routes
 })
 
+const moduleRouteOrder = [
+  { mod: 'dashboard', name: 'dashboard' },
+  { mod: 'programacion', name: 'programacion' },
+  { mod: 'captura', name: 'captura' },
+  { mod: 'encuestas', name: 'encuesta' },
+  { mod: 'reportes', name: 'reportes' },
+  { mod: 'administracion', name: 'administracion' }
+]
+
+const routeToModuleMap = {
+  dashboard: 'dashboard',
+  programacion: 'programacion',
+  captura: 'captura',
+  encuesta: 'encuestas',
+  reportes: 'reportes',
+  administracion: 'administracion',
+  'admin-usuarios': 'administracion',
+  'admin-restricciones': 'administracion',
+  'admin-archivos': 'administracion',
+  'admin-formatos': 'administracion',
+  'admin-cursos': 'administracion',
+  'admin-mensajes': 'administracion'
+}
+
 router.beforeEach((to) => {
   const authStore = useAuthStore()
   
@@ -51,15 +75,25 @@ router.beforeEach((to) => {
   }
   
   if (to.name === 'login' && authStore.isAuthenticated) {
-    const userPermiso = Number(authStore.user?.permiso || authStore.user?.idpermiso)
-    return userPermiso === 1 ? { name: 'programacion' } : { name: 'dashboard' }
+    const firstAllowed = moduleRouteOrder.find(item => authStore.hasModulo(item.mod))
+    return firstAllowed ? { name: firstAllowed.name } : { name: 'programacion' }
   }
 
-  // Verificación de roles (Permisos)
+  // Verificación de acceso por módulo asignado
+  if (authStore.isAuthenticated && routeToModuleMap[to.name]) {
+    const requiredModule = routeToModuleMap[to.name]
+    if (!authStore.hasModulo(requiredModule)) {
+      const firstAllowed = moduleRouteOrder.find(item => authStore.hasModulo(item.mod))
+      return firstAllowed ? { name: firstAllowed.name } : { name: 'login' }
+    }
+  }
+
+  // Verificación adicional de roles (si está definido en la ruta)
   if (to.meta.roles && authStore.isAuthenticated) {
     const userPermiso = Number(authStore.user?.permiso || authStore.user?.idpermiso)
     if (!to.meta.roles.includes(userPermiso)) {
-      return userPermiso === 1 ? { name: 'programacion' } : { name: 'dashboard' }
+      const firstAllowed = moduleRouteOrder.find(item => authStore.hasModulo(item.mod))
+      return firstAllowed ? { name: firstAllowed.name } : { name: 'login' }
     }
   }
 
