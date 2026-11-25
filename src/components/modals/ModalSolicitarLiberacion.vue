@@ -91,12 +91,12 @@ const enviarSolicitud = async () => {
   <AppModal :open="open" size="lg" @close="emit('close')">
     <template #header>
       <div class="flex items-center gap-3">
-        <div class="p-2.5 bg-white/15 rounded-xl border border-white/20">
-          <MessageSquarePlus class="w-6 h-6 text-white" />
+        <div class="p-2.5 bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 rounded-xl border border-amber-200/60 dark:border-amber-800/40">
+          <MessageSquarePlus class="w-6 h-6" />
         </div>
         <div>
-          <h3 class="text-xl font-bold text-white">Solicitar Liberación / Notificar</h3>
-          <p class="text-xs text-purple-200 mt-0.5">
+          <h3 class="text-xl font-bold text-slate-900 dark:text-white">Solicitar Liberación / Notificar</h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {{ actividad?.clave_accion || 'AE' }} — {{ actividad?.nombre_accion || actividad?.curso || '' }}
           </p>
         </div>
@@ -147,7 +147,7 @@ const enviarSolicitud = async () => {
         <button
           type="button"
           @click="emit('close')"
-          class="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 transition-colors cursor-pointer"
+          class="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 transition-all cursor-pointer shadow-xs"
         >
           Cancelar
         </button>
@@ -157,7 +157,7 @@ const enviarSolicitud = async () => {
           size="md"
           :loading="sending"
           @click="enviarSolicitud"
-          class="shadow-md shadow-iecm-morado/20"
+          class="bg-[#6B2D8B] hover:bg-[#582472] text-white font-bold shadow-md shadow-purple-900/10 px-5 py-2.5 rounded-xl cursor-pointer"
         >
           <template #icon v-if="!sending"><Send class="w-4 h-4" /></template>
           Enviar Solicitud

@@ -14,7 +14,7 @@ const allTabs = [
   { name: 'Gestión de Usuarios', path: '/administracion/usuarios', icon: Users, superAdminOnly: true },
   { name: 'Restricciones de Fechas', path: '/administracion/restricciones', icon: CalendarRange, superAdminOnly: false },
   { name: 'Explorador de Archivos', path: '/administracion/archivos', icon: FolderOpen, superAdminOnly: false },
-  { name: 'Formatos Oficiales', path: '/administracion/formatos', icon: FileText, superAdminOnly: false },
+  { name: 'Formatos Oficiales', path: '/administracion/formatos', icon: FileText, superAdminOnly: true },
   { name: 'Catálogo de Acciones Educativas', path: '/administracion/cursos', icon: Palette, superAdminOnly: false },
   { name: 'Mensajes Predeterminados', path: '/administracion/mensajes', icon: MessageSquare, superAdminOnly: true }
 ]

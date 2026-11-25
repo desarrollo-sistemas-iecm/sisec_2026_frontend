@@ -237,29 +237,25 @@ const onGenerate = async () => {
 
 onMounted(() => {
   loadCatalogos()
-  if (vistaRef.value) animarVista(vistaRef.value)
 })
 </script>
 
 <template>
   <div ref="vistaRef" class="space-y-6 max-w-5xl mx-auto">
-    <!-- Encabezado (Header banner) -->
-    <div class="rounded-2xl bg-[#403166] dark:bg-[#231A38] px-6 py-6 text-white shadow-iecm-sm flex flex-wrap items-center justify-between gap-6 relative overflow-hidden">
-      <!-- Decoración de fondo -->
-      <div class="absolute right-0 top-0 w-64 h-64 bg-white/5 opacity-20 rounded-full blur-3xl translate-x-1/3 -translate-y-1/3"></div>
-      
-      <div class="flex items-start gap-4 relative z-10">
-        <div class="p-3 bg-white/15 rounded-xl border border-white/20 shadow-sm">
-          <FileSpreadsheet class="w-8 h-8 text-white" />
+    <!-- Encabezado Minimalista y Profesional -->
+    <header class="pb-4 border-b border-slate-200/90 dark:border-slate-800">
+      <div class="flex items-center gap-3">
+        <div class="p-2.5 bg-purple-100 dark:bg-purple-950/70 text-[#6B2D8B] dark:text-purple-300 rounded-xl border border-purple-200/60 dark:border-purple-800/50 shadow-2xs">
+          <FileSpreadsheet class="w-6 h-6" />
         </div>
         <div>
-          <h2 class="text-2xl font-bold tracking-tight text-white">Generación de Reportes</h2>
-          <p class="text-purple-200 text-sm mt-1 max-w-lg">
+          <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Generación de Reportes</h2>
+          <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Configura los filtros y exporta la información en formato Excel (.xlsx).
           </p>
         </div>
       </div>
-    </div>
+    </header>
 
     <!-- ═════════════════════════════════════════════════════════════════════ -->
     <!-- ESTADO: EN CONSTRUCCIÓN / PRÓXIMAMENTE                              -->
@@ -320,7 +316,7 @@ onMounted(() => {
         <form @submit.prevent="onGenerate" class="space-y-8">
           
           <!-- Bloque Principal: Tipo de Reporte -->
-          <div class="bg-iecm-gris dark:bg-slate-950 p-5 rounded-xl border border-iecm-gris-200 dark:border-white/10">
+          <div class="bg-slate-50/80 dark:bg-slate-900/60 p-5 rounded-xl border border-slate-200/80 dark:border-white/10">
             <AppSelect
               v-model="form.tipo"
               label="1. Tipo de reporte"
