@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Swal from 'sweetalert2'
 import BaseInput from '../ui/BaseInput.vue'
@@ -9,6 +9,7 @@ import AlertMessage from '../ui/AlertMessage.vue'
 import { useLogin } from '../../composables/useLogin.js'
 import { useLoginAnimations } from '../../composables/useLoginAnimations.js'
 import { authService } from '../../services/authService.js'
+import { getSocket } from '../../services/socket.js'
 
 const props = defineProps({
   scopeRef: {
@@ -38,6 +39,22 @@ const { triggerShake } = useLoginAnimations(props.scopeRef || cardRef, cardRef)
 const isUltimaActHabilitado = ref(false)
 const ultimaActFecha = ref('')
 
+// Configuración de SweetAlert2 Toast para notificaciones elegantes
+const Toast = Swal.mixin({
+  toast: true,
+  position: 'top-end',
+  showConfirmButton: false,
+  timer: 3200,
+  timerProgressBar: true,
+  customClass: {
+    popup: 'sicec-toast-popup'
+  },
+  didOpen: (toast) => {
+    toast.onmouseenter = Swal.stopTimer
+    toast.onmouseleave = Swal.resumeTimer
+  }
+})
+
 const formatDateString = (dateString) => {
   if (!dateString) return ''
   const parts = dateString.split('-')
@@ -51,18 +68,57 @@ const formatDateString = (dateString) => {
   return dateString
 }
 
+let socketInstance = null
+
 onMounted(async () => {
   const config = await authService.getUltimaActualizacion()
-  if (config?.habilitado) {
-    isUltimaActHabilitado.value = true
+  isUltimaActHabilitado.value = Boolean(config?.habilitado)
+  if (config?.fecha) {
     ultimaActFecha.value = config.fecha
+  }
+
+  try {
+    socketInstance = getSocket()
+    if (socketInstance) {
+      socketInstance.on('config:ultima_actualizacion', (data) => {
+        isUltimaActHabilitado.value = Boolean(data?.habilitado)
+        if (data?.fecha) ultimaActFecha.value = data.fecha
+      })
+    }
+  } catch (err) {
+    console.warn('[SOCKET] Error escuchando en login card:', err)
+  }
+})
+
+onUnmounted(() => {
+  if (socketInstance) {
+    socketInstance.off('config:ultima_actualizacion')
   }
 })
 
 const onSubmit = async () => {
+  // Validación rápida de campos requeridos
+  if (!usuario.value.trim() || !contrasena.value) {
+    Toast.fire({
+      icon: 'warning',
+      title: 'Campos requeridos',
+      text: 'Por favor ingresa tu usuario y contraseña.'
+    })
+    triggerShake()
+    return
+  }
+
   await handleLogin({
     onSuccess: async (data) => {
-      // Breve pausa para apreciar el estado de éxito animado en el botón
+      const nombreUsuario = data.user?.nombre ? `¡Bienvenido, ${data.user.nombre}!` : '¡Bienvenido al sistema!'
+      
+      // Toast de éxito
+      Toast.fire({
+        icon: 'success',
+        title: nombreUsuario,
+        text: 'Acceso autorizado correctamente.'
+      })
+
       setTimeout(async () => {
         if (data.mostrarAlertaLogin) {
           await Swal.fire({
@@ -75,10 +131,18 @@ const onSubmit = async () => {
         }
         const userPermiso = Number(data.user?.permiso || data.user?.id_tipousuario || 1)
         await router.push({ name: userPermiso === 1 ? 'programacion' : 'dashboard' })
-      }, 550)
+      }, 650)
     },
-    onError: () => {
+    onError: (err) => {
       triggerShake()
+      const mensaje = err?.message || errorMessage.value || 'Usuario o contraseña incorrectos. Verifica tus credenciales.'
+      
+      // Toast de error
+      Toast.fire({
+        icon: 'error',
+        title: 'Error de autenticación',
+        text: mensaje
+      })
     }
   })
 }
@@ -87,30 +151,29 @@ const onSubmit = async () => {
 <template>
   <div
     ref="cardRef"
-    class="login-card relative z-10 w-[92vw] sm:w-[440px] max-w-full rounded-[28px] p-7 sm:p-9 md:p-10 transition-colors duration-300"
-    style="
-      background: radial-gradient(120% 120% at 50% 0%, rgba(35, 16, 68, 0.78) 0%, rgba(14, 7, 28, 0.88) 100%);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 24px 64px -12px rgba(0, 0, 0, 0.85), 0 0 80px -20px rgba(107, 45, 139, 0.28);
-    "
+    class="login-card-crystal relative z-10 w-full max-w-[460px] rounded-[32px] p-7 sm:p-9 md:p-10 transition-all duration-300"
   >
-    <!-- Borde biselado superior brillante -->
-    <div class="absolute inset-x-8 top-0 h-[1px] bg-gradient-to-r from-transparent via-iecm-morado-400/50 to-transparent pointer-events-none"></div>
+    <!-- Borde biselado superior brillante de cristal -->
+    <div class="absolute inset-x-8 top-0 h-[2.8px] bg-gradient-to-r from-transparent via-white/100 to-transparent pointer-events-none"></div>
 
-    <!-- Encabezado de Sesión -->
+    <!-- Encabezado de Sesión Cristalino -->
     <div class="anim-header text-center mb-6 pt-1">
-      <h2 class="text-2xl sm:text-[26px] font-bold text-white tracking-tight leading-tight">
+      <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.10] border border-white/25 shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.4),0_8px_20px_rgba(0,0,0,0.3)] mb-3">
+        <svg class="w-7 h-7 text-white drop-shadow-[0_2px_8px_rgba(147,88,184,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+      </div>
+      <h2 class="text-2xl sm:text-[27px] font-black text-white tracking-tight leading-tight drop-shadow-sm">
         Iniciar sesión
       </h2>
-      <p class="text-xs sm:text-sm text-slate-400 mt-1.5 font-normal">
+      <p class="text-xs sm:text-sm text-purple-200/80 mt-1.5 font-normal">
         Ingresa tus credenciales para acceder al sistema.
       </p>
     </div>
 
-    <!-- 3. Formulario Semántico -->
+    <!-- Formulario Semántico -->
     <form @submit.prevent="onSubmit" class="space-y-4" novalidate>
-      <!-- Mensaje de Error Accesible (role=alert) -->
+      <!-- Mensaje de Error Accesible en tarjeta -->
       <transition
         enter-active-class="transition duration-250 ease-out"
         enter-from-class="opacity-0 -translate-y-2 scale-98"
@@ -140,7 +203,7 @@ const onSubmit = async () => {
         >
           <template #iconLeft>
             <svg
-              class="w-5 h-5"
+              class="w-5 h-5 text-purple-300/80"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -168,7 +231,7 @@ const onSubmit = async () => {
       </div>
 
       <!-- Botón de Envío con Estados -->
-      <div class="anim-btn pt-1.5">
+      <div class="anim-btn pt-2">
         <BaseButton
           type="submit"
           :loading="loading"
@@ -176,7 +239,7 @@ const onSubmit = async () => {
           :disabled="isRateLimited"
         >
           <span v-if="isRateLimited">Reintentar en {{ countdown }}s</span>
-          <span v-else>Acceder al sistema</span>
+          <span v-else class="font-extrabold tracking-wide">Acceder al sistema</span>
         </BaseButton>
       </div>
 
@@ -185,11 +248,11 @@ const onSubmit = async () => {
         v-if="isUltimaActHabilitado"
         class="anim-update text-center pt-2 mt-4 border-t border-white/5"
       >
-        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.03] border border-white/5">
+        <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/10 backdrop-blur-xs">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          <p class="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
+          <p class="text-[10px] text-slate-300 uppercase tracking-wider font-semibold">
             Última actualización:
-            <span class="text-emerald-400 font-bold ml-0.5">{{ formatDateString(ultimaActFecha) }}</span>
+            <span class="text-emerald-400 font-black ml-0.5">{{ formatDateString(ultimaActFecha) }}</span>
           </p>
         </div>
       </div>

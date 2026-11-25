@@ -154,10 +154,23 @@ const atenderSolicitud = async (notif, resolucion) => {
 
 const formatDate = (dateString) => {
   if (!dateString) return ''
-  const date = new Date(dateString)
-  return new Intl.DateTimeFormat('es-MX', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-  }).format(date)
+  try {
+    const s = String(dateString).trim()
+    const clean = s.endsWith('Z') ? s.slice(0, -1) : s
+    const date = new Date(clean.replace(' ', 'T'))
+    if (isNaN(date.getTime())) return s
+    return new Intl.DateTimeFormat('es-MX', {
+      timeZone: 'America/Mexico_City',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(date)
+  } catch (e) {
+    return String(dateString)
+  }
 }
 
 // Sockets

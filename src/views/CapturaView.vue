@@ -5,14 +5,17 @@ import {
   CalendarRange, Search, ChevronUp, ChevronDown, CheckCircle,
   XCircle, CalendarClock, Lock, AlertCircle, CalendarDays,
   FileText, ClipboardList, ShieldCheck, Eye, BellRing, Send,
-  Sparkles, Filter, RefreshCw
+  Sparkles, Filter, RefreshCw, MapPin, Layers, Clock, RotateCcw,
+  ChevronRight
 } from '@lucide/vue'
 import api from '../services/api.js'
 import { useAuthStore } from '../stores/authStore.js'
 import { useToast } from '../composables/useToast.js'
 import { useGsapAnimations } from '../composables/useGsapAnimations.js'
+import { useDateRestrictions } from '../composables/useDateRestrictions.js'
 import { getSocket } from '../services/socket.js'
 
+import AppModal from '../components/AppModal.vue'
 import AppCard from '../components/ui/AppCard.vue'
 import AppTable from '../components/ui/AppTable.vue'
 import AppInput from '../components/ui/AppInput.vue'
@@ -26,6 +29,7 @@ import ModalSolicitarLiberacion from '../components/modals/ModalSolicitarLiberac
 const authStore = useAuthStore()
 const toast = useToast()
 const { animarVista, animarFilasTabla } = useGsapAnimations()
+const { loadRestrictions, getCoveringException } = useDateRestrictions()
 
 const isDistrital = computed(() => Number(authStore.user?.id_tipousuario || authStore.user?.permiso) === 1)
 const isAdmin = computed(() => Number(authStore.user?.id_tipousuario || authStore.user?.permiso) === 2)
@@ -43,9 +47,18 @@ const dateTo = ref('')
 const statusFilter = ref('')
 const selectedDistrito = ref('')
 
-// Paginación y Ordenamiento
-const sortKey = ref('fecha_programada')
-const sortDir = ref('desc')
+// Paginación y Ordenamiento (Por defecto: Sin capturar primero, después capturadas)
+const getEstadoPriority = (id_estado) => {
+  const est = Number(id_estado)
+  if (est === 1) return 1 // Sin capturar
+  if (est === 2) return 2 // Capturada
+  if (est === 3) return 3 // Finalizada
+  if (est === 4) return 4 // Cancelada
+  return 99
+}
+
+const sortKey = ref('estado_prioridad')
+const sortDir = ref('asc')
 const page = ref(1)
 const pageSize = ref(10)
 
@@ -54,7 +67,14 @@ const capturaModalOpen = ref(false)
 const capturaReadOnly = ref(false)
 const encuestaModalOpen = ref(false)
 const liberacionModalOpen = ref(false)
+const motivoModalOpen = ref(false)
 const activeRow = ref(null)
+const selectedMotivoRow = ref(null)
+
+const openVerMotivo = (row) => {
+  selectedMotivoRow.value = row
+  motivoModalOpen.value = true
+}
 
 // Cargar acciones desde API 2027
 const loadAcciones = async () => {
@@ -94,6 +114,38 @@ const stats = computed(() => {
   return { total, sinCapturar, capturadas, finalizadas, canceladas }
 })
 
+const tasaAvance = computed(() => {
+  const tot = stats.value.total
+  if (!tot) return 0
+  return Math.round(((stats.value.capturadas + stats.value.finalizadas) / tot) * 100)
+})
+
+const getStatusPercent = (count) => {
+  if (!stats.value.total) return 0
+  return Math.round((count / stats.value.total) * 100)
+}
+
+const filterByStatus = (status) => {
+  if (statusFilter.value === String(status)) {
+    statusFilter.value = ''
+  } else {
+    statusFilter.value = String(status)
+  }
+}
+
+const hasActiveFilters = computed(() => {
+  return !!(search.value || dateFrom.value || dateTo.value || statusFilter.value || selectedDistrito.value)
+})
+
+const clearFilters = () => {
+  search.value = ''
+  dateFrom.value = ''
+  dateTo.value = ''
+  statusFilter.value = ''
+  selectedDistrito.value = ''
+  page.value = 1
+}
+
 // Filtros reactivos
 const filteredRows = computed(() => {
   const term = search.value.trim().toLowerCase()
@@ -119,6 +171,18 @@ const sortedRows = computed(() => {
   const dir = sortDir.value === 'asc' ? 1 : -1
 
   return [...filteredRows.value].sort((a, b) => {
+    if (key === 'estado_prioridad') {
+      const pA = getEstadoPriority(a.id_estado)
+      const pB = getEstadoPriority(b.id_estado)
+      if (pA !== pB) {
+        return (pA - pB) * dir
+      }
+      // Dentro del mismo estado, ordenar por fecha más reciente primero
+      const fechaA = String(a.fecha_programada || '')
+      const fechaB = String(b.fecha_programada || '')
+      return fechaB.localeCompare(fechaA)
+    }
+
     const valA = a[key] ?? ''
     const valB = b[key] ?? ''
     if (typeof valA === 'number' && typeof valB === 'number') {
@@ -165,14 +229,60 @@ const getEstadoBadgeClass = (id_estado) => {
   }
 }
 
+// Helpers de Folio y Tiempo de Captura
+const hasFolio = (row) => {
+  if (!row?.folio_accion_educativa) return false
+  const f = String(row.folio_accion_educativa).trim()
+  return f.length > 0 && !f.toLowerCase().includes('sin folio')
+}
+
+const isTiempoVencido = (row) => {
+  if (!row) return false
+  if (row.tiempo_vencido !== undefined && row.tiempo_vencido !== null) {
+    return Boolean(row.tiempo_vencido)
+  }
+  const dateStr = String(row.fecha_programada || '').split('T')[0]
+  if (!dateStr) return false
+
+  // 1. Si cuenta con excepción activa concedida por el Administrador para esta fecha y sede, está habilitado
+  if (getCoveringException) {
+    const excepcion = getCoveringException(dateStr, 'captura', row.id_distrito)
+    if (excepcion) return false
+  }
+
+  // 2. Extraer año y mes de la actividad programada
+  const [y, m, d] = dateStr.split('-').map(Number)
+  if (!y || !m) return false
+
+  const now = new Date()
+  const curY = now.getFullYear()
+  const curM = now.getMonth() + 1
+
+  // 3. Si pertenece a un mes o año anterior al mes en curso: tiempo vencido (mes cerrado)
+  if (y < curY || (y === curY && m < curM)) {
+    return true
+  }
+
+  return false
+}
+
 // Acciones de Distrital
 const openCaptura = (row, readOnly = false) => {
+  if (!readOnly && (Number(row.id_estado) === 1 || Number(row.id_estado) === 2) && isTiempoVencido(row)) {
+    toast.warning('El plazo de captura para esta actividad ha vencido (mes cerrado). Solicita la apertura del mes.')
+    openLiberacion(row)
+    return
+  }
   activeRow.value = row
   capturaReadOnly.value = readOnly
   capturaModalOpen.value = true
 }
 
 const openEncuesta = (row) => {
+  if (!hasFolio(row)) {
+    toast.warning('No se puede responder encuesta para una acción sin folio institucional.')
+    return
+  }
   activeRow.value = row
   encuestaModalOpen.value = true
 }
@@ -257,11 +367,15 @@ const openCancelar = async (row) => {
 
 // Acción de Administrador: Enviar recordatorio a distrito en tiempo real
 const enviarRecordatorioCaptura = async (row) => {
+  const distritoEtiqueta = (row.id_distrito === 0 || row.distrito === 0 || row.distrito === 'Central' || row.es_central) 
+    ? 'Oficinas Centrales' 
+    : `Distrito ${row.id_distrito || row.distrito || ''}`
+
   const { isConfirmed } = await Swal.fire({
     title: 'Enviar Recordatorio de Captura',
     html: `
       <div class="text-left text-sm space-y-2">
-        <p>Se enviará un recordatorio urgente al <b>Distrito ${row.id_distrito || row.distrito || ''}</b> para la acción:</p>
+        <p>Se enviará un recordatorio urgente al <b>${distritoEtiqueta}</b> para la acción:</p>
         <div class="p-3 bg-purple-50 rounded-lg border border-purple-200">
           <p class="font-bold text-purple-900">${row.clave_accion} - ${row.nombre_accion}</p>
           <p class="text-xs text-purple-700">Institución: ${row.nombre_institucion}</p>
@@ -286,7 +400,7 @@ const enviarRecordatorioCaptura = async (row) => {
         mensaje_base: `Le recordamos que la acción ${row.clave_accion} en ${row.nombre_institucion} se encuentra en estado Sin Capturar y el plazo está por vencer.`,
         comentario_adicional: 'Favor de realizar la captura y subir los formatos a la brevedad.'
       })
-      toast.success(`Recordatorio emitido al Distrito ${row.id_distrito || row.distrito || ''}.`)
+      toast.success(`Recordatorio emitido a ${distritoEtiqueta}.`)
     } catch (error) {
       toast.error('No se pudo enviar el recordatorio.')
     }
@@ -297,7 +411,7 @@ const enviarRecordatorioCaptura = async (row) => {
 let socket = null
 onMounted(() => {
   loadAcciones()
-  if (vistaRef.value) animarVista(vistaRef.value)
+  loadRestrictions()
 
   try {
     socket = getSocket()
@@ -356,91 +470,276 @@ watch(page, () => {
 
 <template>
   <div ref="vistaRef" class="space-y-6">
-    <!-- Header banner -->
-    <div class="rounded-2xl bg-[#403166] dark:bg-[#231A38] px-6 py-6 text-white shadow-iecm-sm flex flex-wrap items-center justify-between gap-6 relative overflow-hidden">
-      <div class="absolute right-0 top-0 w-72 h-72 bg-white/5 opacity-20 rounded-full blur-3xl translate-x-1/3 -translate-y-1/3"></div>
+    <!-- Encabezado Minimalista y Profesional (Tipografía limpia, breadcrumb y widget de avance) -->
+    <header class="space-y-4 pb-4 border-b border-slate-200/90 dark:border-slate-800">
+      <!-- Breadcrumb sutil -->
+      <nav class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+        <span>Educación Cívica</span>
+        <ChevronRight class="w-3.5 h-3.5 text-slate-400" />
+        <span>SISEC Institucional</span>
+        <ChevronRight class="w-3.5 h-3.5 text-slate-400" />
+        <span class="font-semibold text-slate-800 dark:text-slate-200">Captura y Seguimiento 2027</span>
+      </nav>
 
-      <div class="flex items-start gap-4 relative z-10">
-        <div class="p-3 bg-white/15 rounded-xl border border-white/20 shadow-sm">
-          <CalendarRange class="w-8 h-8 text-white" />
-        </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h2 class="text-2xl font-bold tracking-tight text-white">Captura y Seguimiento de Acciones Educativas 2027</h2>
-            <span v-if="isAdmin" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-400/20 text-amber-200 border border-amber-300/30">
-              Modo Administrador (Solo Lectura)
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+        <!-- Título y descripción institucional -->
+        <div class="space-y-1.5 max-w-3xl">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
+              <div class="p-2 bg-purple-100 dark:bg-purple-950/70 text-[#6B2D8B] dark:text-purple-300 rounded-xl border border-purple-200/60 dark:border-purple-800/50 shadow-2xs">
+                <CalendarRange class="w-6 h-6" />
+              </div>
+              <span>Captura y Seguimiento de Acciones Educativas 2027</span>
+            </h1>
+            <span v-if="isAdmin" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+              Modo Administrador
             </span>
           </div>
-          <p class="text-purple-200 text-sm mt-1 max-w-xl">
-            {{ isDistrital ? 'Captura la información sociodemográfica, adjunta los 4 formatos oficiales y gestiona las encuestas de satisfacción.' : 'Monitorea en tiempo real el avance de captura de todos los distritos, visualiza expedientes y emite avisos institucionales.' }}
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            {{ isDistrital ? 'Captura la información sociodemográfica, adjunta los 4 formatos oficiales y gestiona las encuestas de satisfacción institucional.' : 'Monitorea en tiempo real el avance de captura distrital, visualiza expedientes oficiales y emite avisos institucionales.' }}
           </p>
         </div>
-      </div>
 
-      <!-- Métricas rápidas de los 4 estados -->
-      <div class="flex items-center gap-2.5 flex-wrap relative z-10">
-        <div class="bg-white/10 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-white/15 text-center">
-          <span class="block text-xs uppercase tracking-wider text-purple-200 font-semibold">Total</span>
-          <span class="text-lg font-extrabold text-white">{{ stats.total }}</span>
-        </div>
-        <div class="bg-amber-500/20 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-amber-400/30 text-center">
-          <span class="block text-xs uppercase tracking-wider text-amber-200 font-semibold">Sin Capturar</span>
-          <span class="text-lg font-extrabold text-amber-300">{{ stats.sinCapturar }}</span>
-        </div>
-        <div class="bg-blue-500/20 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-blue-400/30 text-center">
-          <span class="block text-xs uppercase tracking-wider text-blue-200 font-semibold">Capturadas</span>
-          <span class="text-lg font-extrabold text-blue-300">{{ stats.capturadas }}</span>
-        </div>
-        <div class="bg-emerald-500/20 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-emerald-400/30 text-center">
-          <span class="block text-xs uppercase tracking-wider text-emerald-200 font-semibold">Finalizadas</span>
-          <span class="text-lg font-extrabold text-emerald-300">{{ stats.finalizadas }}</span>
-        </div>
-        <div class="bg-rose-500/20 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-rose-400/30 text-center">
-          <span class="block text-xs uppercase tracking-wider text-rose-200 font-semibold">Canceladas</span>
-          <span class="text-lg font-extrabold text-rose-300">{{ stats.canceladas }}</span>
+        <!-- Widget Radial de Avance Global (Card Blanca / Minimalista) -->
+        <div class="flex items-center gap-4 bg-white dark:bg-slate-900 px-4 py-3 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm shrink-0 self-start lg:self-auto">
+          <div class="relative w-12 h-12 flex items-center justify-center shrink-0">
+            <svg class="w-12 h-12 -rotate-90 transform" viewBox="0 0 36 36">
+              <!-- Anillo base -->
+              <path
+                class="text-slate-100 dark:text-slate-800 stroke-current"
+                stroke-width="3.5"
+                fill="none"
+                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+              />
+              <!-- Anillo dinámico de avance -->
+              <path
+                class="text-emerald-500 stroke-current transition-all duration-700 ease-out"
+                :stroke-dasharray="`${tasaAvance}, 100`"
+                stroke-width="3.5"
+                stroke-linecap="round"
+                fill="none"
+                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+              />
+            </svg>
+            <span class="absolute text-[11px] font-black text-slate-800 dark:text-slate-100">{{ tasaAvance }}%</span>
+          </div>
+          <div class="space-y-0.5">
+            <span class="block text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Avance Global</span>
+            <span class="block text-xs text-slate-800 dark:text-slate-200 font-bold">
+              {{ stats.capturadas + stats.finalizadas }} de {{ stats.total }} atendidas
+            </span>
+            <button
+              type="button"
+              @click="loadAcciones"
+              :disabled="loading"
+              class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#6B2D8B] hover:text-purple-900 dark:text-purple-300 dark:hover:text-white transition-colors cursor-pointer pt-0.5"
+              title="Actualizar datos"
+            >
+              <RefreshCw class="w-3 h-3" :class="loading ? 'animate-spin' : ''" />
+              <span>Actualizar</span>
+            </button>
+          </div>
         </div>
       </div>
+    </header>
+
+    <!-- Grid de Métricas / Contadores Ejecutivos Interactivos -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+      <!-- 1. Total -->
+      <button
+        type="button"
+        @click="filterByStatus('')"
+        class="text-left p-4 rounded-2xl border transition-all duration-200 cursor-pointer group shadow-xs hover:shadow-md"
+        :class="statusFilter === '' 
+          ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 ring-2 ring-purple-600/30' 
+          : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-800'"
+      >
+        <div class="flex items-center justify-between mb-2">
+          <div class="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <Layers class="w-5 h-5" />
+          </div>
+          <span class="text-[11px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400 bg-purple-100/60 dark:bg-purple-950/60 px-2.5 py-0.5 rounded-full">
+            Total
+          </span>
+        </div>
+        <div class="space-y-0.5">
+          <span class="text-2xl font-black text-slate-900 dark:text-white tracking-tight block">
+            {{ stats.total }}
+          </span>
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400 block">
+            Acciones programadas
+          </span>
+        </div>
+      </button>
+
+      <!-- 2. Sin Capturar (Prioridad operativa) -->
+      <button
+        type="button"
+        @click="filterByStatus('1')"
+        class="text-left p-4 rounded-2xl border transition-all duration-200 cursor-pointer group shadow-xs hover:shadow-md relative overflow-hidden"
+        :class="statusFilter === '1' 
+          ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 ring-2 ring-amber-500/40' 
+          : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-800'"
+      >
+        <div class="flex items-center justify-between mb-2">
+          <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <Clock class="w-5 h-5" />
+          </div>
+          <span class="relative flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/70 px-2.5 py-0.5 rounded-full">
+            <span v-if="stats.sinCapturar > 0" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            Pendiente
+          </span>
+        </div>
+        <div class="space-y-0.5">
+          <span class="text-2xl font-black text-amber-600 dark:text-amber-400 tracking-tight block">
+            {{ stats.sinCapturar }}
+          </span>
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400 block truncate" :title="`${getStatusPercent(stats.sinCapturar)}% del total pendiente`">
+            {{ getStatusPercent(stats.sinCapturar) }}% por capturar
+          </span>
+        </div>
+      </button>
+
+      <!-- 3. Capturadas -->
+      <button
+        type="button"
+        @click="filterByStatus('2')"
+        class="text-left p-4 rounded-2xl border transition-all duration-200 cursor-pointer group shadow-xs hover:shadow-md"
+        :class="statusFilter === '2' 
+          ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-400 dark:border-blue-600 ring-2 ring-blue-500/40' 
+          : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-800'"
+      >
+        <div class="flex items-center justify-between mb-2">
+          <div class="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <FileText class="w-5 h-5" />
+          </div>
+          <span class="text-[11px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300 bg-blue-100/70 dark:bg-blue-950/70 px-2.5 py-0.5 rounded-full">
+            En Proceso
+          </span>
+        </div>
+        <div class="space-y-0.5">
+          <span class="text-2xl font-black text-blue-600 dark:text-blue-400 tracking-tight block">
+            {{ stats.capturadas }}
+          </span>
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400 block truncate">
+            Formatos 1-3 listos
+          </span>
+        </div>
+      </button>
+
+      <!-- 4. Finalizadas -->
+      <button
+        type="button"
+        @click="filterByStatus('3')"
+        class="text-left p-4 rounded-2xl border transition-all duration-200 cursor-pointer group shadow-xs hover:shadow-md"
+        :class="statusFilter === '3' 
+          ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-600 ring-2 ring-emerald-500/40' 
+          : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-800'"
+      >
+        <div class="flex items-center justify-between mb-2">
+          <div class="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <ShieldCheck class="w-5 h-5" />
+          </div>
+          <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/70 px-2.5 py-0.5 rounded-full">
+            Cerradas
+          </span>
+        </div>
+        <div class="space-y-0.5">
+          <span class="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight block">
+            {{ stats.finalizadas }}
+          </span>
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400 block truncate">
+            Expediente 100%
+          </span>
+        </div>
+      </button>
+
+      <!-- 5. Canceladas -->
+      <button
+        type="button"
+        @click="filterByStatus('4')"
+        class="text-left p-4 rounded-2xl border transition-all duration-200 cursor-pointer group shadow-xs hover:shadow-md col-span-2 sm:col-span-1"
+        :class="statusFilter === '4' 
+          ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 dark:border-rose-600 ring-2 ring-rose-500/40' 
+          : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-rose-300 dark:hover:border-rose-800'"
+      >
+        <div class="flex items-center justify-between mb-2">
+          <div class="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <XCircle class="w-5 h-5" />
+          </div>
+          <span class="text-[11px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300 bg-rose-100/70 dark:bg-rose-950/70 px-2.5 py-0.5 rounded-full">
+            Canceladas
+          </span>
+        </div>
+        <div class="space-y-0.5">
+          <span class="text-2xl font-black text-rose-600 dark:text-rose-400 tracking-tight block">
+            {{ stats.canceladas }}
+          </span>
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400 block truncate">
+            Con motivo oficial
+          </span>
+        </div>
+      </button>
     </div>
 
     <!-- Contenedor Principal con AppCard -->
     <AppCard>
       <!-- Filtros -->
       <template #header>
-        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-5 items-end">
-          <div :class="isAdmin || isSuperAdmin ? 'lg:col-span-1' : 'lg:col-span-2'">
-            <AppInput
-              v-model="search"
-              placeholder="Folio, institución, clave..."
-              label="Buscar Acción"
+        <div class="space-y-3">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <Filter class="w-4 h-4 text-[#6B2D8B] dark:text-purple-400" />
+              <span class="text-sm font-bold text-slate-800 dark:text-slate-200">Filtros y Búsqueda</span>
+            </div>
+            <button
+              v-if="hasActiveFilters"
+              type="button"
+              @click="clearFilters"
+              class="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-700 hover:text-purple-900 dark:text-purple-300 dark:hover:text-white transition-colors cursor-pointer"
             >
-              <template #icon><Search class="w-4 h-4" /></template>
-            </AppInput>
+              <RotateCcw class="w-3.5 h-3.5" />
+              Limpiar filtros
+            </button>
           </div>
 
-          <!-- Selector de Distrito exclusivo para Administrador -->
-          <div v-if="isAdmin || isSuperAdmin">
-            <AppSelect v-model="selectedDistrito" label="Distrito">
-              <option value="">Todos los distritos</option>
-              <option v-for="d in 33" :key="d" :value="d">Distrito {{ d }}</option>
-            </AppSelect>
-          </div>
+          <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-5 items-end">
+            <div :class="isAdmin || isSuperAdmin ? 'lg:col-span-1' : 'lg:col-span-2'">
+              <AppInput
+                v-model="search"
+                placeholder="Folio, institución, acción..."
+                label="Buscar Acción"
+              >
+                <template #icon><Search class="w-4 h-4" /></template>
+              </AppInput>
+            </div>
 
-          <div>
-            <AppSelect v-model="statusFilter" label="Estado">
-              <option value="">Todos los estados</option>
-              <option value="1">Sin capturar</option>
-              <option value="2">Capturada</option>
-              <option value="3">Finalizada</option>
-              <option value="4">Cancelada</option>
-            </AppSelect>
-          </div>
+            <!-- Selector de Distrito exclusivo para Administrador -->
+            <div v-if="isAdmin || isSuperAdmin">
+              <AppSelect v-model="selectedDistrito" label="Distrito / Sede">
+                <option value="">Todos los distritos</option>
+                <option value="0">Sede Central / Admin</option>
+                <option v-for="d in 33" :key="d" :value="d">Distrito {{ d }}</option>
+              </AppSelect>
+            </div>
 
-          <div>
-            <AppInput v-model="dateFrom" type="date" label="Desde fecha" />
-          </div>
+            <div>
+              <AppSelect v-model="statusFilter" label="Estado">
+                <option value="">Todos los estados</option>
+                <option value="1">Sin capturar</option>
+                <option value="2">Capturada</option>
+                <option value="3">Finalizada</option>
+                <option value="4">Cancelada</option>
+              </AppSelect>
+            </div>
 
-          <div>
-            <AppInput v-model="dateTo" type="date" label="Hasta fecha" />
+            <div>
+              <AppInput v-model="dateFrom" type="date" label="Desde fecha" />
+            </div>
+
+            <div>
+              <AppInput v-model="dateTo" type="date" label="Hasta fecha" />
+            </div>
           </div>
         </div>
       </template>
@@ -475,7 +774,13 @@ watch(page, () => {
               <ChevronDown v-else-if="sortKey === 'fecha_programada' && sortDir === 'desc'" class="w-3 h-3" />
             </div>
           </th>
-          <th class="px-5 py-3 text-center">Estado</th>
+          <th class="px-5 py-3 text-center cursor-pointer hover:bg-iecm-morado/15 transition-colors select-none" @click="toggleSort('estado_prioridad')">
+            <div class="flex items-center justify-center gap-1.5">
+              <span>Estado</span>
+              <ChevronUp v-if="sortKey === 'estado_prioridad' && sortDir === 'asc'" class="w-3 h-3" />
+              <ChevronDown v-else-if="sortKey === 'estado_prioridad' && sortDir === 'desc'" class="w-3 h-3" />
+            </div>
+          </th>
           <th class="px-5 py-3 text-center">Acciones</th>
         </template>
 
@@ -486,7 +791,7 @@ watch(page, () => {
             class="tr-row transition-all duration-200 border-b border-slate-100 dark:border-slate-800 hover:bg-purple-50/40 dark:hover:bg-purple-950/20"
           >
             <!-- Línea de color distintivo del catálogo -->
-            <td class="w-2 p-0" :style="{ backgroundColor: row.color || '#6B2D8B' }" title="Color distintivo de la acción"></td>
+            <td class="w-2 p-0" :style="{ backgroundColor: row.color || row.color_vertiente || '#6B2D8B' }" title="Color distintivo de la acción"></td>
 
             <!-- Consecutivo -->
             <td class="px-5 py-4 text-center font-bold text-slate-500 dark:text-slate-400 text-sm">
@@ -496,45 +801,50 @@ watch(page, () => {
             <!-- Folio e Identificación de Acción -->
             <td class="px-5 py-4">
               <div class="flex flex-col gap-1">
-                <div class="flex items-center gap-2">
-                  <span class="font-mono text-xs font-bold text-iecm-morado-900 dark:text-iecm-morado-300">
-                    {{ row.folio_accion_educativa || `ID-${row.id_acciones_educativas}` }}
+                <div>
+                  <span
+                    v-if="row.folio_accion_educativa"
+                    class="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight"
+                  >
+                    {{ row.folio_accion_educativa }}
                   </span>
                   <span
-                    class="px-2 py-0.5 rounded text-[11px] font-bold text-white shadow-xs"
-                    :style="{ backgroundColor: row.color || '#6B2D8B' }"
+                    v-else
+                    class="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 shadow-2xs italic"
                   >
-                    {{ row.clave_accion }}
-                  </span>
-                  <span v-if="row.con_convenio" class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                    Convenio
+                    Sin folio
                   </span>
                 </div>
-                <span class="text-xs font-medium text-slate-700 dark:text-slate-300 line-clamp-1" :title="row.nombre_accion">
+                <span class="text-sm font-medium text-slate-800 dark:text-slate-200 line-clamp-1" :title="row.nombre_accion">
                   {{ row.nombre_accion }}
-                </span>
-                <span class="text-[11px] text-slate-400">
-                  Vertiente: <strong class="text-slate-600 dark:text-slate-400">{{ row.vertiente }}</strong>
                 </span>
               </div>
             </td>
 
             <!-- Institución y Ubicación -->
             <td class="px-5 py-4">
-              <div class="flex flex-col">
+              <div class="flex flex-col gap-1">
                 <span class="font-semibold text-slate-900 dark:text-slate-100 text-sm line-clamp-1" :title="row.nombre_institucion">
                   {{ row.nombre_institucion }}
                 </span>
-                <span class="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">
-                  {{ row.calle_numero }}, {{ row.demarcacion }}
-                </span>
-                <div class="flex items-center gap-2 mt-1">
+                <div class="flex items-center gap-2">
                   <span class="text-[11px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800">
                     {{ row.tipo_institucion || 'Espacio visitado' }}
                   </span>
-                  <span v-if="isAdmin && (row.id_distrito || row.distrito)" class="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-semibold">
-                    Distrito {{ row.id_distrito || row.distrito }}
-                  </span>
+                  <template v-if="isAdmin">
+                    <span
+                      v-if="row.id_distrito === 0 || row.distrito === 0 || String(row.id_distrito) === '0' || row.distrito === 'Central' || row.distrito === 'Admin' || row.es_central"
+                      class="text-[11px] font-bold text-purple-800 dark:text-purple-300 bg-purple-100/90 dark:bg-purple-950/60 px-2.5 py-0.5 rounded-md border border-purple-300 dark:border-purple-700 shadow-2xs"
+                    >
+                      Central
+                    </span>
+                    <span
+                      v-else-if="row.id_distrito || row.distrito"
+                      class="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-700/60 font-semibold"
+                    >
+                      Distrito {{ row.id_distrito || row.distrito }}
+                    </span>
+                  </template>
                 </div>
               </div>
             </td>
@@ -569,8 +879,16 @@ watch(page, () => {
                   {{ row.estado_accion || (Number(row.id_estado) === 1 ? 'Sin capturar' : Number(row.id_estado) === 2 ? 'Capturada' : Number(row.id_estado) === 3 ? 'Finalizada' : 'Cancelada') }}
                 </span>
 
-                <!-- Contador de encuestas respondidas para capturadas y finalizadas -->
-                <span v-if="Number(row.id_estado) >= 2" class="text-[10px] text-slate-500 font-medium">
+                <!-- Indicador de Mes Cerrado / Tiempo Vencido -->
+                <span 
+                  v-if="(Number(row.id_estado) === 1 || Number(row.id_estado) === 2) && isTiempoVencido(row)"
+                  class="text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700 shadow-xs"
+                >
+                  Mes cerrado
+                </span>
+
+                <!-- Contador de encuestas respondidas ÚNICAMENTE para capturadas y finalizadas con folio (nunca en canceladas) -->
+                <span v-if="(Number(row.id_estado) === 2 || Number(row.id_estado) === 3) && hasFolio(row)" class="text-[10px] text-slate-500 font-medium">
                   {{ row.total_encuestas || 0 }} encuesta(s)
                 </span>
               </div>
@@ -578,10 +896,37 @@ watch(page, () => {
 
             <!-- Columna de Acciones -->
             <td class="px-5 py-4 text-center">
-              <!-- VISTA EXCLUSIVA PARA ADMINISTRADOR (Solo Lectura + Recordatorios) -->
-              <div v-if="isAdmin" class="flex items-center justify-center gap-2">
+              <!-- CASO 1: ACCIÓN CANCELADA (id_estado === 4) -> Para CUALQUIER tipo de usuario SOLO ver motivo -->
+              <div v-if="Number(row.id_estado) === 4" class="flex items-center justify-center">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-800 rounded-lg transition-all shadow-xs cursor-pointer active:scale-95"
+                  title="Ver motivo institucional de cancelación"
+                  @click="openVerMotivo(row)"
+                >
+                  <AlertCircle class="w-4 h-4 text-rose-500" />
+                  <span>Ver motivo</span>
+                </button>
+              </div>
+
+              <!-- CASO 2: VISTA EXCLUSIVA PARA ADMINISTRADOR (Solo Lectura + Recordatorios) -->
+              <div v-else-if="isAdmin" class="flex items-center justify-center gap-2">
+                <!-- Encuesta: solo para estados 2 y 3 SI tiene folio institucional -->
                 <AppButton
-                  v-if="Number(row.id_estado) >= 2"
+                  v-if="(Number(row.id_estado) === 2 || Number(row.id_estado) === 3) && hasFolio(row)"
+                  variant="secondary"
+                  size="sm"
+                  class="bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300"
+                  title="Responder o registrar encuestas de satisfacción"
+                  @click="openEncuesta(row)"
+                >
+                  <template #icon><ClipboardList class="w-4 h-4 text-emerald-700" /></template>
+                  Encuesta
+                </AppButton>
+
+                <!-- Ver Detalle: solo para estados 2 y 3 (capturada y finalizada) -->
+                <AppButton
+                  v-if="Number(row.id_estado) === 2 || Number(row.id_estado) === 3"
                   variant="secondary"
                   size="sm"
                   title="Ver expediente y evidencias adjuntas (Solo Lectura)"
@@ -591,6 +936,7 @@ watch(page, () => {
                   Ver Detalle
                 </AppButton>
 
+                <!-- Recordatorio: solo para estado 1 (Sin capturar) -->
                 <AppButton
                   v-if="Number(row.id_estado) === 1"
                   variant="ghost"
@@ -604,10 +950,25 @@ watch(page, () => {
                 </AppButton>
               </div>
 
-              <!-- VISTA PARA DISTRITAL / SUPERADMIN (Operativa Completa) -->
+              <!-- CASO 3: VISTA PARA DISTRITAL / SUPERADMIN (Operativa Completa) -->
               <div v-else class="flex items-center justify-center gap-1.5 flex-wrap">
-                <!-- ESTADO 1: SIN CAPTURAR -->
-                <template v-if="Number(row.id_estado) === 1">
+                <!-- SUB-CASO A: TIEMPO DE CAPTURA VENCIDO (ESTADO 1 O 2 CON MES CERRADO / PLAZO VENCIDO) -->
+                <!-- Botones operativos deshabilitados y ÚNICAMENTE se muestra el botón Send para solicitar apertura -->
+                <template v-if="(Number(row.id_estado) === 1 || Number(row.id_estado) === 2) && isTiempoVencido(row)">
+                  <AppButton
+                    variant="secondary"
+                    size="sm"
+                    class="bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-700 font-semibold shadow-xs"
+                    title="El plazo de captura ha vencido (mes cerrado). Clic para solicitar la apertura del mes al Administrador"
+                    @click="openLiberacion(row)"
+                  >
+                    <template #icon><Send class="w-4 h-4 text-amber-600 dark:text-amber-400" /></template>
+                    Solicitar apertura
+                  </AppButton>
+                </template>
+
+                <!-- SUB-CASO B: ESTADO 1: SIN CAPTURAR (DENTRO DEL PERIODO VIGENTE) -->
+                <template v-else-if="Number(row.id_estado) === 1">
                   <AppButton
                     variant="primary"
                     size="sm"
@@ -638,19 +999,9 @@ watch(page, () => {
                   >
                     <template #icon><XCircle class="w-4 h-4" /></template>
                   </AppButton>
-
-                  <AppButton
-                    variant="ghost"
-                    size="sm"
-                    class="text-blue-600 hover:bg-blue-50"
-                    title="Solicitar liberación extemporánea al Administrador"
-                    @click="openLiberacion(row)"
-                  >
-                    <template #icon><Send class="w-4 h-4" /></template>
-                  </AppButton>
                 </template>
 
-                <!-- ESTADO 2: CAPTURADA (Permite encuestas y finalizar) -->
+                <!-- SUB-CASO C: ESTADO 2: CAPTURADA (DENTRO DEL PERIODO VIGENTE) -->
                 <template v-else-if="Number(row.id_estado) === 2">
                   <AppButton
                     variant="secondary"
@@ -661,11 +1012,13 @@ watch(page, () => {
                     Editar
                   </AppButton>
 
+                  <!-- Encuesta: solo si tiene folio oficial generado -->
                   <AppButton
+                    v-if="hasFolio(row)"
                     variant="secondary"
                     size="sm"
                     class="bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300"
-                    title="Responder encuesta individual y generar PDF imprimible"
+                    title="Responder encuesta de satisfacción"
                     @click="openEncuesta(row)"
                   >
                     <template #icon><ClipboardList class="w-4 h-4 text-emerald-700" /></template>
@@ -684,8 +1037,21 @@ watch(page, () => {
                   </AppButton>
                 </template>
 
-                <!-- ESTADO 3: FINALIZADA (Bloqueo Total / Expediente Cerrado) -->
+                <!-- SUB-CASO D: ESTADO 3: FINALIZADA -->
                 <template v-else-if="Number(row.id_estado) === 3">
+                  <!-- Encuesta: solo si tiene folio oficial generado -->
+                  <AppButton
+                    v-if="hasFolio(row)"
+                    variant="secondary"
+                    size="sm"
+                    class="bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300"
+                    title="Responder más encuestas de satisfacción"
+                    @click="openEncuesta(row)"
+                  >
+                    <template #icon><ClipboardList class="w-4 h-4 text-emerald-700" /></template>
+                    Encuesta
+                  </AppButton>
+
                   <AppButton
                     variant="secondary"
                     size="sm"
@@ -696,17 +1062,6 @@ watch(page, () => {
                     <template #icon><Eye class="w-4 h-4 text-emerald-600" /></template>
                     Ver Expediente
                   </AppButton>
-                </template>
-
-                <!-- ESTADO 4: CANCELADA -->
-                <template v-else-if="Number(row.id_estado) === 4">
-                  <span
-                    class="text-xs text-rose-600 italic cursor-help inline-flex items-center gap-1"
-                    :title="row.motivo_cancelacion ? `Motivo: ${row.motivo_cancelacion}` : 'Actividad cancelada'"
-                  >
-                    <AlertCircle class="w-3.5 h-3.5" />
-                    {{ row.motivo_cancelacion ? 'Ver motivo' : 'Cancelada' }}
-                  </span>
                 </template>
               </div>
             </td>
@@ -757,5 +1112,82 @@ watch(page, () => {
       @close="liberacionModalOpen = false"
       @enviado="() => { liberacionModalOpen = false; loadAcciones(); }"
     />
+
+    <!-- Modal Pequeño de Motivo de Cancelación -->
+    <AppModal
+      :open="motivoModalOpen"
+      size="sm"
+      @close="motivoModalOpen = false"
+    >
+      <template #header>
+        <div class="flex items-center gap-3">
+          <div class="p-2.5 bg-rose-100 dark:bg-rose-950/60 rounded-xl text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 shadow-xs">
+            <XCircle class="w-5 h-5" />
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-900 dark:text-white leading-tight">
+              Motivo de Cancelación
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Detalle institucional de la actividad cancelada
+            </p>
+          </div>
+        </div>
+      </template>
+
+      <div v-if="selectedMotivoRow" class="space-y-3.5 py-1">
+        <!-- Ficha Resumen de la Acción -->
+        <div class="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/60 space-y-1">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Acción Educativa
+            </span>
+            <span 
+              v-if="selectedMotivoRow.folio_accion_educativa" 
+              class="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400"
+            >
+              {{ selectedMotivoRow.folio_accion_educativa }}
+            </span>
+            <span 
+              v-else 
+              class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 italic"
+            >
+              Sin folio (ID: {{ selectedMotivoRow.id_acciones_educativas }})
+            </span>
+          </div>
+          <p class="text-sm font-bold text-slate-800 dark:text-slate-100 line-clamp-2">
+            {{ selectedMotivoRow.clave_accion ? `${selectedMotivoRow.clave_accion} - ` : '' }}{{ selectedMotivoRow.nombre_accion || 'Acción Educativa' }}
+          </p>
+          <p class="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1.5 pt-0.5">
+            <MapPin class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span class="truncate">{{ selectedMotivoRow.nombre_institucion || 'Sede sin especificar' }}</span>
+          </p>
+        </div>
+
+        <!-- Caja del Motivo -->
+        <div class="p-3.5 bg-rose-50/70 dark:bg-rose-950/30 rounded-xl border border-rose-200/90 dark:border-rose-900/50 space-y-1.5">
+          <div class="flex items-center gap-1.5 text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider">
+            <AlertCircle class="w-4 h-4 shrink-0 text-rose-500" />
+            <span>Motivo Registrado</span>
+          </div>
+          <p class="text-sm text-slate-800 dark:text-rose-100 font-medium whitespace-pre-wrap leading-relaxed pl-5">
+            {{ selectedMotivoRow.motivo_cancelacion || 'No se ingresó un motivo específico al cancelar esta actividad.' }}
+          </p>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="flex justify-end w-full">
+          <AppButton
+            variant="secondary"
+            size="sm"
+            class="px-5 font-semibold text-slate-700 dark:text-slate-200"
+            @click="motivoModalOpen = false"
+          >
+            Cerrar
+          </AppButton>
+        </div>
+      </template>
+    </AppModal>
   </div>
 </template>

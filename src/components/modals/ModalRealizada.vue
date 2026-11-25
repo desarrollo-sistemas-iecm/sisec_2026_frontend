@@ -313,14 +313,14 @@ watch(
     <div class="max-h-[85vh] overflow-y-auto px-1 pb-4 scrollbar-thin scrollbar-thumb-iecm-morado-200">
       <div class="space-y-8">
         
-        <!-- Header -->
-        <div class="flex items-start gap-4 p-4 bg-[#5B3166] text-white rounded-xl border border-[#5B3166]/30">
-          <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/15 text-sm font-bold text-white shadow-sm border border-white/20">
+        <!-- Header Moderno y Neutral -->
+        <div class="flex items-start gap-4 p-4 bg-slate-50 dark:bg-slate-900/60 text-slate-800 dark:text-slate-100 rounded-xl border border-slate-200/80 dark:border-white/10">
+          <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-purple-100 dark:bg-purple-950/70 text-sm font-bold text-[#6B2D8B] dark:text-purple-300 shadow-sm border border-purple-200/60 dark:border-purple-800/40">
             IECM
           </div>
           <div>
-            <p class="text-xs uppercase tracking-wider font-semibold text-purple-200 mb-1">Captura de Actividad</p>
-            <h3 class="text-lg font-bold text-white leading-tight">{{ titulo }}</h3>
+            <p class="text-xs uppercase tracking-wider font-bold text-[#6B2D8B] dark:text-purple-300 mb-1">Captura de Actividad</p>
+            <h3 class="text-lg font-bold text-slate-900 dark:text-white leading-tight">{{ titulo }}</h3>
           </div>
         </div>
 

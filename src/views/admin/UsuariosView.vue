@@ -99,8 +99,19 @@ const loadUsuarios = async () => {
   loading.value = true
   try {
     const { data } = await api.get('/admin/usuarios')
-    if (data.success) {
-      usuarios.value = data.data
+    if (data.success && Array.isArray(data.data)) {
+      const currentUid = Number(authStore.user?.idUsuario || authStore.user?.id_usuario || 0)
+      const currentUname = String(authStore.user?.usuario || authStore.user?.nombre || '').toLowerCase().trim()
+
+      usuarios.value = data.data.map(u => {
+        const uid = Number(u.idusuario || u.id_usuario || 0)
+        const uname = String(u.usuario || '').toLowerCase().trim()
+        const isMe = (currentUid && uid === currentUid) || (currentUname && uname === currentUname)
+        return {
+          ...u,
+          conectado: Boolean(u.conectado || isMe)
+        }
+      })
       animarConexiones()
     }
   } catch (error) {
@@ -134,7 +145,10 @@ const filteredUsuarios = computed(() => {
     list = list.filter(u => {
       const nameMatch = u.usuario?.toLowerCase().includes(term)
       const idMatch = String(u.idusuario).includes(term)
-      const sedeMatch = `distrito ${u.idsede}`.includes(term) || (u.idsede === 0 && 'sede central'.includes(term))
+      const isCentralUser = Number(u.idsede) === 0 || Number(u.idpermiso) >= 2 || u.usuario === 'admin'
+      const sedeMatch = isCentralUser 
+        ? ('central'.includes(term) || 'sede central'.includes(term) || 'admin'.includes(term))
+        : `distrito ${u.idsede}`.includes(term)
       const rolMatch = getPermisoName(u.idpermiso).toLowerCase().includes(term)
       return nameMatch || idMatch || sedeMatch || rolMatch
     })
@@ -324,11 +338,22 @@ onMounted(() => {
   loadUsuarios()
 
   // Escuchar actualizaciones de presencia del WebSocket
-  authStore.socket?.on('usuarios:estado', (conectadosList) => {
-    usuarios.value = usuarios.value.map(u => ({
-      ...u,
-      conectado: conectadosList.includes(Number(u.idusuario))
-    }))
+  authStore.socket?.on('usuarios:estado', (data) => {
+    const ids = Array.isArray(data) ? data.map(Number) : (Array.isArray(data?.ids) ? data.ids.map(Number) : [])
+    const usernames = Array.isArray(data?.usernames) ? data.usernames.map(x => String(x).toLowerCase().trim()) : []
+    const currentUid = Number(authStore.user?.idUsuario || authStore.user?.id_usuario || 0)
+    const currentUname = String(authStore.user?.usuario || authStore.user?.nombre || '').toLowerCase().trim()
+
+    usuarios.value = usuarios.value.map(u => {
+      const uid = Number(u.idusuario || u.id_usuario || 0)
+      const uname = String(u.usuario || '').toLowerCase().trim()
+      const isMe = (currentUid && uid === currentUid) || (currentUname && uname === currentUname)
+      const isOnline = isMe || ids.includes(uid) || usernames.includes(uname)
+      return {
+        ...u,
+        conectado: Boolean(isOnline)
+      }
+    })
     animarConexiones()
   })
 })
@@ -557,8 +582,13 @@ onUnmounted(() => {
           <tr v-for="row in filteredUsuarios" :key="row.idusuario" class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
             <td class="px-6 py-4 font-medium text-slate-900 dark:text-white">{{ row.usuario }}</td>
             <td class="px-6 py-4 text-slate-600 dark:text-slate-400">
-              <span v-if="row.idsede === 0">Sede Central</span>
-              <span v-else>Distrito {{ row.idsede }}</span>
+              <span
+                v-if="Number(row.idsede) === 0 || Number(row.idpermiso) >= 2 || row.usuario === 'admin'"
+                class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800"
+              >
+                Central
+              </span>
+              <span v-else class="text-sm font-medium">Distrito {{ row.idsede }}</span>
             </td>
             <td class="px-6 py-4">
               <AppBadge :variant="getPermisoColor(row.idpermiso)">{{ getPermisoName(row.idpermiso) }}</AppBadge>

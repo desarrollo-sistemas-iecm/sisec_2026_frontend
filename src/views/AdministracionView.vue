@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Users, CalendarRange, FolderOpen, FileText, Palette, MessageSquare } from '@lucide/vue'
+import { Users, CalendarRange, FolderOpen, FileText, Palette, MessageSquare, Send } from '@lucide/vue'
 import { useAuthStore } from '../stores/authStore.js'
 
 const route = useRoute()
@@ -14,9 +14,10 @@ const allTabs = [
   { name: 'Gestión de Usuarios', path: '/administracion/usuarios', icon: Users, superAdminOnly: true },
   { name: 'Restricciones de Fechas', path: '/administracion/restricciones', icon: CalendarRange, superAdminOnly: false },
   { name: 'Explorador de Archivos', path: '/administracion/archivos', icon: FolderOpen, superAdminOnly: false },
-  { name: 'Formatos Oficiales', path: '/administracion/formatos', icon: FileText, superAdminOnly: false },
+  { name: 'Formatos Oficiales', path: '/administracion/formatos', icon: FileText, superAdminOnly: true },
   { name: 'Catálogo de Acciones Educativas', path: '/administracion/cursos', icon: Palette, superAdminOnly: false },
-  { name: 'Mensajes Predeterminados', path: '/administracion/mensajes', icon: MessageSquare, superAdminOnly: true }
+  { name: 'Mensajes Predeterminados', path: '/administracion/mensajes', icon: MessageSquare, superAdminOnly: true },
+  { name: 'Bot Telegram', path: '/administracion/telegram', icon: Send, superAdminOnly: true }
 ]
 
 const visibleTabs = computed(() => {
