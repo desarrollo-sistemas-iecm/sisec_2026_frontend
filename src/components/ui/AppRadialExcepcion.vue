@@ -5,6 +5,7 @@ import { useThemeStore } from '../../stores/themeStore.js'
 import logoBlanco from '../../assets/logos/iecm-blanco.png'
 import logoNegro from '../../assets/logos/iecm-negro.png'
 import api from '../../services/api.js'
+import { getSocket } from '../../services/socket.js'
 import { gsap } from 'gsap'
 import { Clock, CalendarDays, AlertCircle, Sparkles, ShieldCheck, CheckCircle } from '@lucide/vue'
 
@@ -159,8 +160,8 @@ const fetchHabilitaciones = async () => {
 const activeSpecialException = computed(() => {
   if (!rawConfigs.value.length) return null
 
-  const userSede = Number(authStore.user?.idsede || 0)
-  const isSuperOrAdmin = Number(authStore.user?.permiso || authStore.user?.idpermiso) >= 2
+  const userSede = Number(authStore.user?.idsede ?? authStore.user?.id_distrito ?? 0)
+  const isSuperOrAdmin = Number(authStore.user?.permiso || authStore.user?.idpermiso || authStore.user?.id_tipousuario || 1) >= 2
   const now = new Date()
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
@@ -184,21 +185,32 @@ const activeSpecialException = computed(() => {
   if (!matched) return null
 
   // Validar si la ventana de prórroga aún está abierta
-  // Si tiene fecha_limite, verificar contra hoy
-  const fechaLimite = matched.fecha_limite || matched.fecha_fin
+  let fechaLimite = matched.fecha_limite
+  // Si la fecha_limite es nula o menor a hoy (por ej. si guardó fecha_fin de un mes pasado),
+  // pero la regla está habilitada, calculamos una ventana de prórroga válida desde su alta
+  if (!fechaLimite || fechaLimite < todayStr) {
+    const fechaBase = matched.fecha_actualizado ? new Date(matched.fecha_actualizado) : now
+    const limitDate = new Date(fechaBase)
+    limitDate.setDate(limitDate.getDate() + 5)
+    const fallbackStr = `${limitDate.getFullYear()}-${String(limitDate.getMonth() + 1).padStart(2, '0')}-${String(limitDate.getDate()).padStart(2, '0')}`
+    if (fallbackStr >= todayStr) {
+      fechaLimite = fallbackStr
+    }
+  }
+
   if (fechaLimite && fechaLimite < todayStr) {
     return null // Ya expiró la ventana de captura
   }
 
   // Calcular días que le quedan a la prórroga
-  let daysRemainingProrroga = 0
+  let daysRemainingProrroga = 1
   let totalDiasProrroga = 5
   if (fechaLimite) {
     const [y, m, d] = fechaLimite.split('-').map(Number)
     const limitDate = new Date(y, m - 1, d)
     limitDate.setHours(23, 59, 59, 999)
     const diffMs = limitDate.getTime() - now.getTime()
-    daysRemainingProrroga = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
+    daysRemainingProrroga = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
     totalDiasProrroga = Math.max(daysRemainingProrroga, 5)
   }
 
@@ -268,9 +280,30 @@ watch(activeSpecialException, (val) => {
   }
 }, { immediate: true })
 
+watch(() => authStore.user, () => {
+  fetchHabilitaciones()
+}, { deep: true })
+
+let socketInstance = null
+
 onMounted(() => {
   fetchHabilitaciones()
-  checkInterval = setInterval(fetchHabilitaciones, 45000)
+  checkInterval = setInterval(fetchHabilitaciones, 30000)
+
+  // Sockets en tiempo real para actualización instantánea
+  try {
+    socketInstance = authStore.socket || getSocket()
+    if (socketInstance) {
+      socketInstance.on('fechas:actualizadas', () => {
+        fetchHabilitaciones()
+      })
+      socketInstance.on('notificacion:nueva', () => {
+        fetchHabilitaciones()
+      })
+    }
+  } catch (err) {
+    console.warn('[RADIAL] Error en socket:', err)
+  }
   
   // Animación de entrada inicial del radial permanente
   nextTick(() => {
@@ -285,6 +318,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (checkInterval) clearInterval(checkInterval)
+  if (socketInstance) {
+    socketInstance.off('fechas:actualizadas')
+    socketInstance.off('notificacion:nueva')
+  }
 })
 </script>
 

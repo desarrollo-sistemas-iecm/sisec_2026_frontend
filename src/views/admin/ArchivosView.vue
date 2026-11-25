@@ -212,12 +212,30 @@ const downloadFolderAsZip = async () => {
   }
 }
 
-// Descargar un archivo individual (resuelto bajo la raíz 2027)
-const downloadSingleFile = (filepath) => {
+// Construir URL pública limpia del archivo sin romper el protocolo http://
+const getFileUrl = (filepath) => {
+  const cleanPath = String(filepath || '')
+    .replace(/\\/g, '/')
+    .replace(/^[\\\/]*2027([\\\/]|$)/i, '')
+    .replace(/^\/+/, '')
+
   const envApi = import.meta.env.VITE_API_URL || '/api'
-  const cleanApi = envApi.replace(/\/+$/, '')
-  const cleanPath = String(filepath || '').replace(/^[\\\/]*2027([\\\/]|$)/i, '')
-  const url = `${cleanApi}/../uploads/2027/${cleanPath}`.replace(/\/+/g, '/')
+  
+  if (/^https?:\/\//i.test(envApi)) {
+    try {
+      const u = new URL(envApi)
+      const subpath = u.pathname.replace(/\/api\/?$/, '').replace(/\/+$/, '')
+      return `${u.origin}${subpath}/uploads/2027/${cleanPath}`
+    } catch (e) {}
+  }
+
+  const base = envApi.replace(/\/api\/?$/, '').replace(/\/+$/, '')
+  return `${base}/uploads/2027/${cleanPath}`
+}
+
+// Descargar o visualizar un archivo individual (resuelto bajo la raíz 2027)
+const downloadSingleFile = (filepath) => {
+  const url = getFileUrl(filepath)
   window.open(url, '_blank')
 }
 

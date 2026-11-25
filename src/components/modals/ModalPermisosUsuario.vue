@@ -228,7 +228,7 @@ const guardarPermisos = async () => {
       <p class="text-xs">Cargando módulos asignados...</p>
     </div>
 
-    <div v-else class="space-y-5 max-h-[68vh] overflow-y-auto pr-1">
+    <div v-else class="space-y-5 pr-1">
       <!-- Barra de Acciones Rápidas -->
       <div class="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/60">
         <div class="flex items-center gap-2">

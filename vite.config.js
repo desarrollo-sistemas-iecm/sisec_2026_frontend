@@ -29,6 +29,10 @@ export default defineConfig(({ mode }) => {
           target: 'http://localhost:3013',
           changeOrigin: true
         },
+        '/uploads': {
+          target: 'http://localhost:3013',
+          changeOrigin: true
+        },
         '/socket.io': {
           target: 'http://localhost:3013',
           ws: true
@@ -39,6 +43,11 @@ export default defineConfig(({ mode }) => {
           rewrite: (p) => p.replace(/^\/sisec_2026/, '')
         },
         '/sisec_2026/api': {
+          target: 'http://localhost:3013',
+          changeOrigin: true,
+          rewrite: (p) => p.replace(/^\/sisec_2026/, '')
+        },
+        '/sisec_2026/uploads': {
           target: 'http://localhost:3013',
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/sisec_2026/, '')
