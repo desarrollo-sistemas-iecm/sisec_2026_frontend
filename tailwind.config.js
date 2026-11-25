@@ -24,9 +24,9 @@ export default {
           dorado:       '#D97706',
           'dorado-600': '#B45309',
           'dorado-100': '#FEF3C7',
-          gris:         '#E2D3F0', // Fondo app modo claro: lavanda institucional (#E2D3F0)
-          'gris-100':   '#EDE8F4', // Fondo filtros / acentos
-          'gris-200':   '#E0D9EB', // Borde visible modo claro
+          gris:         '#FFFFFF', // Fondo app modo claro: Blanco limpio
+          'gris-100':   '#F8FAFC', // Fondo filtros / acentos
+          'gris-200':   '#E2E8F0', // Borde visible modo claro
           'gris-300':   '#C9BFD9',
           texto:        '#2A2438', // Texto principal modo claro (WCAG AAA - 14.9:1)
           'texto-suave':'#5E566E', // Texto secundario modo claro (WCAG AA - 6.9:1)

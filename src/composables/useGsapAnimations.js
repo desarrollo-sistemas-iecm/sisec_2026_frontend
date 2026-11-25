@@ -7,7 +7,7 @@ export const useGsapAnimations = () => {
       opacity: 0,
       duration: 0.5,
       ease: 'power3.out',
-      clearProps: 'all'
+      clearProps: 'transform,opacity'
     })
   }
 

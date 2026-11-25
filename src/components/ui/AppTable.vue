@@ -21,7 +21,7 @@ defineProps({
   <div class="card-iecm overflow-hidden">
     <div class="w-full overflow-x-auto">
       <table class="w-full text-left text-sm text-iecm-texto dark:text-slate-300">
-        <thead class="bg-[#EDE7F6] text-xs font-semibold uppercase tracking-wider text-iecm-morado-800 border-b border-iecm-gris-200 dark:bg-iecm-dark-header dark:text-iecm-dark-text dark:border-iecm-dark-border">
+        <thead class="bg-slate-50 dark:bg-slate-900/80 text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-white/10">
           <tr>
             <slot name="head"></slot>
           </tr>

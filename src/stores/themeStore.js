@@ -2,13 +2,17 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 export const useThemeStore = defineStore('theme', () => {
-  // Inicialización (por defecto MODO CLARO de inicio)
-  if (!localStorage.getItem('theme_initialized_light')) {
-    localStorage.setItem('theme', 'light')
-    localStorage.setItem('theme_initialized_light', '1')
+  // Inicialización: Por defecto MODO OSCURO
+  if (localStorage.getItem('theme_initialized_light')) {
+    localStorage.removeItem('theme_initialized_light')
   }
 
-  const isDark = ref(localStorage.getItem('theme') === 'dark')
+  if (!localStorage.getItem('theme_initialized_dark_v1')) {
+    localStorage.setItem('theme', 'dark')
+    localStorage.setItem('theme_initialized_dark_v1', '1')
+  }
+
+  const isDark = ref(localStorage.getItem('theme') !== 'light')
 
   const applyTheme = () => {
     if (isDark.value) {

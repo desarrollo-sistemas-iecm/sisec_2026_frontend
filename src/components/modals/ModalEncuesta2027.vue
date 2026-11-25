@@ -3,7 +3,7 @@ import { ref, computed, watch, reactive } from 'vue'
 import Swal from 'sweetalert2'
 import {
   ClipboardList, CheckCircle, User, FileText, Download,
-  Sparkles, AlertCircle, ArrowRight, RotateCcw
+  Sparkles, AlertCircle, ArrowRight, RotateCcw, Save
 } from '@lucide/vue'
 import api from '../../services/api.js'
 import AppModal from '../AppModal.vue'
@@ -64,6 +64,11 @@ const form = reactive({
 })
 
 // Folio autogenerado para visualización
+const tieneFolioValido = computed(() => {
+  const f = props.actividad?.folio_accion_educativa
+  return Boolean(f && String(f).trim() !== '' && !String(f).toLowerCase().includes('sin folio'))
+})
+
 const folioEncuestaVisual = computed(() => {
   const folioAccion = props.actividad?.folio_accion_educativa || 'AE-PENDIENTE'
   return `ENC-${folioAccion}-${consecutivoActual.value}`
@@ -110,6 +115,10 @@ watch(() => props.open, (val) => {
 })
 
 const validar = () => {
+  if (!tieneFolioValido.value) {
+    toast.error('No se puede registrar encuesta para una acción que aún no tiene folio institucional.')
+    return false
+  }
   const edadNum = Number(form.edad)
   if (!form.edad || isNaN(edadNum) || edadNum < 1 || edadNum > 120) {
     toast.warning('Por favor ingresa una edad válida de 2 dígitos (1 - 120).')
@@ -151,7 +160,6 @@ const guardarEncuesta = async () => {
     }
 
     const { data } = await api.post(`/captura-2027/${props.actividad.id_acciones_educativas}/encuestas`, payload)
-    const pdfUrl = data.data?.pdf?.relativeUrl
 
     emit('encuestaGuardada')
 
@@ -160,8 +168,8 @@ const guardarEncuesta = async () => {
       title: '¡Encuesta Registrada!',
       html: `
         <div class="text-left text-sm space-y-2 mt-2">
-          <p>Se ha generado el folio de encuesta: <strong class="text-iecm-morado font-mono">${data.data?.folio_encuesta}</strong></p>
-          <p class="text-xs text-slate-500">Se generó el PDF individual limpio sin firma en la carpeta oficial de encuestas.</p>
+          <p>Se ha guardado la encuesta con folio: <strong class="text-iecm-morado font-mono">${data.data?.folio_encuesta}</strong></p>
+          <p class="text-xs text-slate-500">Las respuestas fueron registradas exitosamente en el expediente digital.</p>
         </div>
       `,
       showCancelButton: true,
@@ -192,23 +200,23 @@ const guardarEncuesta = async () => {
     <template #header>
       <div class="flex items-center justify-between w-full pr-6">
         <div class="flex items-center gap-3">
-          <div class="p-2.5 bg-white/15 rounded-xl border border-white/20">
-            <ClipboardList class="w-6 h-6 text-white" />
+          <div class="p-2.5 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 rounded-xl border border-emerald-200/60 dark:border-emerald-800/40">
+            <ClipboardList class="w-6 h-6" />
           </div>
           <div>
-            <h3 class="text-xl font-bold text-white flex items-center gap-2">
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <span>Cuestionario de Satisfacción</span>
-              <span class="px-2 py-0.5 rounded-full text-xs font-mono bg-white/20 text-purple-100 border border-white/30">
+              <span class="px-2 py-0.5 rounded-full text-xs font-mono bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-bold">
                 Encuesta #{{ consecutivoActual }}
               </span>
             </h3>
-            <p class="text-xs text-purple-200 mt-0.5 max-w-xl truncate">
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 max-w-xl truncate">
               {{ actividad?.clave_accion || 'AE' }} — {{ actividad?.nombre_accion || actividad?.curso || '' }}
             </p>
           </div>
         </div>
 
-        <span class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-purple-500/30 text-white border border-purple-300/40">
+        <span class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
           {{ folioEncuestaVisual }}
         </span>
       </div>
@@ -216,6 +224,17 @@ const guardarEncuesta = async () => {
 
     <div class="space-y-6 max-h-[75vh] overflow-y-auto px-1 pr-2">
       
+      <!-- ALERTA SI NO TIENE FOLIO VÁLIDO -->
+      <div v-if="!tieneFolioValido" class="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-3">
+        <AlertCircle class="w-5 h-5 text-amber-600 shrink-0" />
+        <div>
+          <p class="font-bold">Acción sin folio institucional asignado</p>
+          <p class="text-amber-800 dark:text-amber-300 text-[11px] mt-0.5">
+            No es posible registrar encuestas de satisfacción para esta actividad porque aún no cuenta con un folio oficial generado. Para habilitar las encuestas, primero debe capturarse la acción educativa con sus formatos de evidencia.
+          </p>
+        </div>
+      </div>
+
       <!-- SECCIÓN 1: DATOS DE LA ACTIVIDAD -->
       <div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-white/10 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
         <div>
@@ -309,7 +328,7 @@ const guardarEncuesta = async () => {
         <button
           type="button"
           @click="emit('close')"
-          class="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 transition-colors cursor-pointer"
+          class="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 transition-all cursor-pointer shadow-xs"
         >
           Cerrar
         </button>
@@ -318,8 +337,9 @@ const guardarEncuesta = async () => {
           variant="primary"
           size="md"
           :loading="saving"
+          :disabled="!tieneFolioValido || saving"
           @click="guardarEncuesta"
-          class="shadow-md shadow-iecm-morado/20"
+          class="bg-[#6B2D8B] hover:bg-[#582472] text-white font-bold shadow-md shadow-purple-900/10 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <template #icon v-if="!saving"><Save class="w-4 h-4" /></template>
           Guardar Encuesta #{{ consecutivoActual }}

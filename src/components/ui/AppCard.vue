@@ -9,7 +9,7 @@ defineProps({
 
 <template>
   <div class="card-iecm overflow-hidden transition-colors duration-200">
-    <div v-if="$slots.header" class="border-b border-[#5B3166]/30 bg-[#5B3166] px-5 py-4 text-white [&_h1]:!text-white [&_h2]:!text-white [&_h3]:!text-white [&_h4]:!text-white [&_h5]:!text-white [&_p]:!text-purple-100 [&_span]:!text-purple-100 [&_svg]:!text-purple-200 [&_.label-iecm]:!text-purple-100 dark:bg-iecm-dark-header dark:border-iecm-dark-border dark:text-iecm-dark-text dark:[&_h1]:!text-white dark:[&_h2]:!text-white dark:[&_h3]:!text-white dark:[&_h4]:!text-white dark:[&_p]:!text-iecm-dark-text-muted dark:[&_span]:!text-iecm-dark-text-muted dark:[&_svg]:!text-iecm-morado-400 dark:[&_.label-iecm]:!text-iecm-dark-text-muted">
+    <div v-if="$slots.header" class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 text-slate-800 dark:bg-slate-900/60 dark:border-white/10 dark:text-slate-100">
       <slot name="header"></slot>
     </div>
     
@@ -17,7 +17,7 @@ defineProps({
       <slot></slot>
     </div>
     
-    <div v-if="$slots.footer" class="border-t border-iecm-gris-200 bg-iecm-gris/60 px-5 py-3 dark:border-iecm-dark-border dark:bg-iecm-dark-header/40">
+    <div v-if="$slots.footer" class="border-t border-slate-200/80 bg-slate-50/60 px-5 py-3 text-slate-700 dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
       <slot name="footer"></slot>
     </div>
   </div>

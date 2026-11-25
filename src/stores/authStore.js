@@ -13,9 +13,31 @@ export const useAuthStore = defineStore('auth', {
     isAuthenticated: (state) => Boolean(state.token) && !isExpired(state.tokenExpiry),
     isOperador: (state) => state.user && Number(state.user.permiso || state.user.idpermiso) === 1,
     isAdmin: (state) => state.user && Number(state.user.permiso || state.user.idpermiso) === 2,
-    isSuperAdmin: (state) => state.user && Number(state.user.permiso || state.user.idpermiso) === 3
+    isSuperAdmin: (state) => state.user && Number(state.user.permiso || state.user.idpermiso) === 3,
+    modulosPermitidos: (state) => {
+      if (!state.user) return []
+      if (Array.isArray(state.user.modulos) && state.user.modulos.length > 0) {
+        return state.user.modulos.map(m => String(m).toLowerCase())
+      }
+      const rol = Number(state.user.permiso || state.user.idpermiso || 1)
+      if (rol === 1) {
+        return ['programacion', 'captura', 'encuestas', 'reportes']
+      }
+      return ['dashboard', 'programacion', 'captura', 'encuestas', 'reportes', 'administracion']
+    }
   },
   actions: {
+    hasModulo(codigo) {
+      if (!this.user) return false
+      const cod = String(codigo || '').toLowerCase()
+      return this.modulosPermitidos.includes(cod)
+    },
+    setModulos(modulos) {
+      if (this.user) {
+        this.user.modulos = Array.isArray(modulos) ? modulos.map(m => String(m).toLowerCase()) : []
+        localStorage.setItem('sicec_user', JSON.stringify(this.user))
+      }
+    },
     setSession(token, user) {
       this.token = token
       this.user = user
@@ -98,6 +120,13 @@ export const useAuthStore = defineStore('auth', {
 
       this.socket.on('logout_forced', (data) => {
         handleForcedLogout(data?.reason || data?.mensaje)
+      })
+
+      this.socket.on('usuario:permisos_actualizados', ({ id_usuario, modulos }) => {
+        const myId = Number(this.user?.idUsuario || this.user?.id_usuario)
+        if (myId === Number(id_usuario)) {
+          this.setModulos(modulos)
+        }
       })
     },
     disconnectSocket() {
