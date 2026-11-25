@@ -6,7 +6,7 @@
 
 ---
 
-## 🎨 Identidad Visual y Filosofía de Diseño
+## Identidad Visual y Filosofía de Diseño
 
 El cliente web de **SISEC CC** implementa una estética de nivel institucional llamada **Liquid Crystal Glassmorphism** (anti-slop, moderna, accesible y de alta densidad funcional):
 * **Paleta Oficial del IECM:** Morado institucional (`#6B2D8B`), Morado Profundo (`#3E1857`), Verde Operativo (`#059669`) y Dorado de Acento (`#D97706`).
@@ -16,7 +16,7 @@ El cliente web de **SISEC CC** implementa una estética de nivel institucional l
 
 ---
 
-## 📂 Estructura del Proyecto Frontend
+## Estructura del Proyecto Frontend
 
 ```
 frontend/
@@ -76,7 +76,7 @@ frontend/
 
 ---
 
-## 🛠️ Módulos Principales de la Aplicación
+## Módulos Principales de la Aplicación
 
 ### 1. Programación de Acciones Educativas 2027
 * Validación en tiempo real de periodos habilitados y restricciones institucionales.
@@ -104,27 +104,17 @@ frontend/
 
 ---
 
-## ⚙️ Configuración y Variables de Entorno
+## Configuración y Variables de Entorno
 
-### Archivo `frontend/.env.development`
-```ini
-# En desarrollo local
-VITE_API_URL=http://localhost:3013/api
-VITE_BASE_URL=/
+### Variables de Entorno
+Configurar las variables de entorno para el cliente web (`.env`) según el entorno de despliegue:
 
-# O apuntando al servidor de QA
-# VITE_API_URL=https://aplicaciones2qa.iecm.mx/sisec_2026/api
-```
-
-### Archivo `frontend/.env.production`
-```ini
-VITE_API_URL=https://aplicaciones2qa.iecm.mx/sisec_2026/api
-VITE_BASE_URL=/sisec_2026/
-```
+* `VITE_API_URL`: URL base del API REST del backend (por ejemplo `/api` o la ruta completa del servidor).
+* `VITE_BASE_URL`: Subdirectorio base de despliegue de la aplicación (por ejemplo `/` o la subruta institucional).
 
 ---
 
-## 🚀 Compilación y Despliegue
+## Compilación y Despliegue
 
 ```bash
 # Instalar dependencias
