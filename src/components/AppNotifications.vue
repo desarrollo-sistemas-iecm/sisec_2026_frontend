@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { Bell, CheckCircle2, AlertCircle, FileEdit, X, Trash2 } from '@lucide/vue'
 import { useRouter } from 'vue-router'
 import api from '../services/api'
+import { getSocket } from '../services/socket.js'
 
 const router = useRouter()
 const notificaciones = ref([])
@@ -94,17 +95,34 @@ const handleKeydown = (e) => {
   }
 }
 
+let socketInstance = null
+
 onMounted(() => {
   fetchNotificaciones()
   pollingInterval = setInterval(fetchNotificaciones, 30000)
   window.addEventListener('click', handleOutsideClick)
   window.addEventListener('keydown', handleKeydown)
+
+  try {
+    socketInstance = getSocket()
+    if (socketInstance) {
+      socketInstance.on('notificacion:nueva', () => fetchNotificaciones())
+      socketInstance.on('fechas:actualizadas', () => fetchNotificaciones())
+    }
+  } catch (err) {
+    console.warn('[NOTIFICACIONES] Error al conectar socket:', err)
+  }
 })
 
 onUnmounted(() => {
   if (pollingInterval) clearInterval(pollingInterval)
   window.removeEventListener('click', handleOutsideClick)
   window.removeEventListener('keydown', handleKeydown)
+
+  if (socketInstance) {
+    socketInstance.off('notificacion:nueva')
+    socketInstance.off('fechas:actualizadas')
+  }
 })
 
 const getIcon = (tipo) => {

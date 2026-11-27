@@ -135,6 +135,16 @@ const onSubmit = async () => {
     },
     onError: (err) => {
       triggerShake()
+      if (err?.cierre_sistema || err?.status === 403) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Sistema en Periodo de Cierre',
+          text: err.message,
+          confirmButtonColor: '#6B2D8B',
+          confirmButtonText: 'Entendido'
+        })
+        return
+      }
       const mensaje = err?.message || errorMessage.value || 'Usuario o contraseña incorrectos. Verifica tus credenciales.'
       
       // Toast de error

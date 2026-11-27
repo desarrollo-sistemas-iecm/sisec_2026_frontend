@@ -145,8 +145,8 @@ const sedesList = computed(() => {
 
 const modalTitle = computed(() => {
   if (props.title) return props.title
-  if (idsede.value === 0) return 'Habilitar Fechas Globales (Todos los Distritos)'
-  return `Habilitar Fechas para Distrito ${idsede.value}`
+  if (idsede.value === 0) return 'Habilitar Fechas por Meses Vencidos (Todos los Distritos)'
+  return `Habilitar Fechas por Meses Vencidos - Distrito ${idsede.value}`
 })
 
 const onSubmit = async () => {
@@ -179,9 +179,9 @@ const onSubmit = async () => {
           <div class="text-left text-sm space-y-2">
             <p>Se ha habilitado correctamente:</p>
             <p class="font-semibold text-iecm-morado"><strong>Periodo de actividades:</strong> ${fechasEfectivas.value.descripcion}</p>
-            <p><strong>Destino:</strong> ${Number(idsede.value) === 0 ? 'Todos los distritos' : 'Distrito ' + idsede.value}</p>
+            <p><strong>Destino:</strong> ${Number(idsede.value) === 0 ? 'Todos los distritos (General)' : 'Distrito ' + idsede.value}</p>
             <p><strong>Ventana abierta:</strong> ${diasAbiertoCalculados.value} días restantes (hasta el ${fechaLimiteEfectiva.value}).</p>
-            <p class="text-xs text-slate-500 mt-2">Los operadores verán el radial amarillo indicando la leyenda de actividades habilitadas.</p>
+            <p class="text-xs text-slate-500 mt-2">Se ha enviado la notificación formal a las Direcciones Distritales para su conocimiento.</p>
           </div>
         `,
         confirmButtonColor: '#10b981'

@@ -26,6 +26,16 @@ export const authService = {
       const status = error.response?.status
       const data = error.response?.data
 
+      // Error 403: Cierre programado del sistema (cuentas distritales)
+      if (status === 403 && (data?.cierre_sistema || data?.code === 'CIERRE_SISTEMA')) {
+        const err = new Error(data?.message || 'El sistema se encuentra en periodo de cierre institucional programado conforme a la normativa.')
+        err.status = 403
+        err.cierre_sistema = true
+        err.fecha_cierre = data?.fecha_cierre
+        err.fecha_apertura = data?.fecha_apertura
+        throw err
+      }
+
       // Error 429: Demasiados intentos (Rate Limit)
       if (status === 429) {
         const retryAfter = error.response?.headers?.['retry-after'] || 60

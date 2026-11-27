@@ -33,7 +33,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
+    const isUnauthorized = error.response && error.response.status === 401
+    const isCierreSistema = error.response && error.response.status === 403 && (error.response.data?.cierre_sistema || error.response.data?.code === 'CIERRE_SISTEMA')
+
+    if (isUnauthorized || isCierreSistema) {
       const authStore = useAuthStore()
       authStore.logout()
       

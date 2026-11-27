@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, reactive, nextTick, watch } from 'vue'
-import { Users, UserPlus, Edit, Trash2, Shield, Search, CalendarRange, Zap } from '@lucide/vue'
+import { Users, UserPlus, Edit, Trash2, Shield, Search, CalendarRange, Zap, Power } from '@lucide/vue'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
 import { useAuthStore } from '../../stores/authStore.js'
@@ -38,6 +38,7 @@ const form = reactive({
   idusuario: null,
   usuario: '',
   password: '',
+  confirmPassword: '',
   idpermiso: 1,
   idsede: 1
 })
@@ -216,6 +217,7 @@ const resetForm = () => {
   form.idusuario = null
   form.usuario = ''
   form.password = ''
+  form.confirmPassword = ''
   form.idpermiso = 1
   form.idsede = 1
   isEditing.value = false
@@ -229,11 +231,46 @@ const editUser = (user) => {
   }
   form.idusuario = user.idusuario
   form.usuario = user.usuario
-  form.password = '' // Don't fill password
+  form.password = ''
+  form.confirmPassword = ''
   form.idpermiso = user.idpermiso
   form.idsede = user.idsede
   isEditing.value = true
   showForm.value = true
+}
+
+const toggleAccountStatus = async (user) => {
+  const currentStatus = Boolean(user.estado !== undefined ? user.estado : user.status)
+  const newStatus = !currentStatus
+
+  const result = await Swal.fire({
+    title: newStatus ? `¿Activar cuenta de ${user.usuario}?` : `¿Desactivar cuenta de ${user.usuario}?`,
+    text: newStatus 
+      ? `Se habilitará el acceso al sistema para este usuario distrital.`
+      : `El usuario ya no podrá iniciar sesión en el sistema hasta que sea reactivado por la Administración. Sus datos registrados se conservan intactos.`,
+    icon: newStatus ? 'question' : 'warning',
+    showCancelButton: true,
+    confirmButtonColor: newStatus ? '#10b981' : '#ef4444',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: newStatus ? 'Sí, activar cuenta' : 'Sí, desactivar cuenta',
+    cancelButtonText: 'Cancelar'
+  })
+
+  if (result.isConfirmed) {
+    try {
+      await api.put(`/admin/usuarios/${user.idusuario}`, { status: newStatus ? 1 : 0 })
+      Swal.fire({
+        icon: 'success',
+        title: newStatus ? 'Cuenta Activada' : 'Cuenta Desactivada',
+        text: `La cuenta de ${user.usuario} ha sido ${newStatus ? 'activada' : 'desactivada'} exitosamente.`,
+        timer: 1800,
+        showConfirmButton: false
+      })
+      await loadUsuarios()
+    } catch (error) {
+      Swal.fire('Error', error.response?.data?.message || 'No se pudo cambiar el estado de la cuenta.', 'error')
+    }
+  }
 }
 
 const deleteUser = async (id) => {
@@ -301,15 +338,30 @@ const onSubmit = async () => {
     Swal.fire('Acceso denegado', 'No cuentas con permisos para crear nuevos usuarios.', 'warning')
     return
   }
+
+  // Validación de confirmación de contraseña si se ingresa contraseña
+  if (form.password) {
+    if (form.password !== form.confirmPassword) {
+      Swal.fire('Contraseñas no coinciden', 'La nueva contraseña y su confirmación deben ser exactamente iguales.', 'warning')
+      return
+    }
+    if (form.password.length < 6) {
+      Swal.fire('Contraseña muy corta', 'La contraseña debe contener al menos 6 caracteres.', 'warning')
+      return
+    }
+  }
+
   saving.value = true
   try {
-    if (form.idpermiso === 3) {
-      form.idsede = 0 // Super Admins don't belong to a district generally, or we set to 0
-    }
-    
     if (isEditing.value) {
-      const payload = { idsede: form.idsede, idpermiso: form.idpermiso }
-      if (form.password) payload.password = form.password
+      const payload = {}
+      if (authStore.isSuperAdmin) {
+        payload.idsede = form.idsede
+        payload.idpermiso = form.idpermiso
+      }
+      if (form.password) {
+        payload.password = form.password
+      }
       
       await api.put(`/admin/usuarios/${form.idusuario}`, payload)
       Swal.fire('Actualizado', 'Usuario actualizado correctamente', 'success')
@@ -391,16 +443,25 @@ onUnmounted(() => {
       <form @submit.prevent="onSubmit" class="space-y-6">
         <div class="grid md:grid-cols-2 gap-6">
           <AppInput v-model="form.usuario" label="Nombre de Usuario (Login)" :disabled="isEditing" required />
-          <AppInput v-model="form.password" type="password" :label="isEditing ? 'Nueva Contraseña (dejar en blanco si no cambia)' : 'Contraseña'" :required="!isEditing" />
           
-          <AppSelect v-model.number="form.idpermiso" label="Nivel de Permiso" required>
+          <AppSelect v-model.number="form.idpermiso" label="Nivel de Permiso" required :disabled="!authStore.isSuperAdmin">
             <option v-for="p in permisosDisponibles" :key="p.id" :value="p.id">{{ p.nombre }}</option>
           </AppSelect>
           
-          <AppSelect v-model.number="form.idsede" label="Distrito Territorial (Sede)" required :disabled="form.idpermiso === 3">
+          <AppSelect v-model.number="form.idsede" label="Distrito Territorial (Sede)" required :disabled="form.idpermiso === 3 || !authStore.isSuperAdmin">
             <option value="0" v-if="form.idpermiso === 3">Sede Central (0)</option>
             <option v-for="d in distritos" :key="d" :value="d">Distrito {{ d }}</option>
           </AppSelect>
+
+          <AppInput v-model="form.password" type="password" :label="isEditing ? 'Nueva Contraseña (dejar en blanco si no cambia)' : 'Contraseña'" :required="!isEditing" />
+
+          <AppInput 
+            v-if="form.password || !isEditing"
+            v-model="form.confirmPassword" 
+            type="password" 
+            label="Confirmar Contraseña" 
+            :required="Boolean(form.password || !isEditing)" 
+          />
         </div>
         <div class="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
           <AppButton type="button" variant="outline" @click="resetForm">Cancelar</AppButton>
@@ -594,29 +655,49 @@ onUnmounted(() => {
               <AppBadge :variant="getPermisoColor(row.idpermiso)">{{ getPermisoName(row.idpermiso) }}</AppBadge>
             </td>
             <td class="px-6 py-4">
-              <AppBadge :variant="row.conectado ? 'success' : 'gray'">
-                <span class="inline-block w-1.5 h-1.5 rounded-full mr-1.5" :class="row.conectado ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'"></span>
-                {{ row.conectado ? 'Conectado' : 'Desconectado' }}
-              </AppBadge>
+              <div class="space-y-1">
+                <div>
+                  <span 
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border"
+                    :class="Boolean(row.estado !== undefined ? row.estado : row.status) ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'"
+                  >
+                    {{ Boolean(row.estado !== undefined ? row.estado : row.status) ? 'Cuenta Activa' : 'Cuenta Desactivada' }}
+                  </span>
+                </div>
+                <AppBadge :variant="row.conectado ? 'success' : 'gray'">
+                  <span class="inline-block w-1.5 h-1.5 rounded-full mr-1.5" :class="row.conectado ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'"></span>
+                  {{ row.conectado ? 'En línea' : 'Desconectado' }}
+                </AppBadge>
+              </div>
             </td>
             <td class="px-6 py-4 text-slate-500 dark:text-slate-400 text-sm">{{ row.fecha_registro }}</td>
             <td class="px-6 py-4 text-right">
               <div class="flex justify-end gap-2">
                 <template v-if="row.idpermiso === 1">
-                  <button @click="habilitarFechas(row)" class="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg transition-colors" title="Habilitar Fechas">
+                  <button @click="habilitarFechas(row)" class="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg transition-colors cursor-pointer" title="Habilitar Fechas">
                     <CalendarRange class="w-4 h-4" />
                   </button>
+                  <!-- Desactivar / Activar Cuenta Distrital -->
+                  <button 
+                    v-if="authStore.isAdmin || authStore.isSuperAdmin" 
+                    @click="toggleAccountStatus(row)" 
+                    :class="Boolean(row.estado !== undefined ? row.estado : row.status) ? 'p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30' : 'p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'" 
+                    class="rounded-lg transition-colors cursor-pointer" 
+                    :title="Boolean(row.estado !== undefined ? row.estado : row.status) ? 'Desactivar Cuenta' : 'Activar Cuenta'"
+                  >
+                    <Power class="w-4 h-4" />
+                  </button>
                 </template>
-                <button v-if="authStore.isSuperAdmin && row.conectado && row.idusuario !== authStore.user?.idUsuario" @click="forceDisconnect(row)" class="p-1.5 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-lg transition-colors" title="Desconectar Forzosamente">
+                <button v-if="authStore.isSuperAdmin && row.conectado && row.idusuario !== authStore.user?.idUsuario" @click="forceDisconnect(row)" class="p-1.5 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-lg transition-colors cursor-pointer" title="Desconectar Forzosamente">
                   <Zap class="w-4 h-4" />
                 </button>
-                <button v-if="authStore.isSuperAdmin" @click="openPermisos(row)" class="p-1.5 text-iecm-morado-600 dark:text-iecm-morado-400 hover:bg-iecm-morado-50 dark:hover:bg-iecm-morado-950/30 rounded-lg transition-colors" title="Permisos Granulares y Catálogo">
+                <button v-if="authStore.isSuperAdmin" @click="openPermisos(row)" class="p-1.5 text-iecm-morado-600 dark:text-iecm-morado-400 hover:bg-iecm-morado-50 dark:hover:bg-iecm-morado-950/30 rounded-lg transition-colors cursor-pointer" title="Permisos Granulares y Catálogo">
                   <Shield class="w-4 h-4" />
                 </button>
-                <button v-if="authStore.isSuperAdmin || row.idpermiso !== 3" @click="editUser(row)" class="p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title="Editar">
+                <button v-if="authStore.isSuperAdmin || row.idpermiso !== 3" @click="editUser(row)" class="p-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer" title="Editar">
                   <Edit class="w-4 h-4" />
                 </button>
-                <button v-if="authStore.isSuperAdmin" @click="deleteUser(row.idusuario)" class="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors" title="Eliminar">
+                <button v-if="authStore.isSuperAdmin" @click="deleteUser(row.idusuario)" class="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer" title="Eliminar">
                   <Trash2 class="w-4 h-4" />
                 </button>
               </div>
