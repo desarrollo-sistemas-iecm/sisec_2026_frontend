@@ -69,9 +69,17 @@ const tieneFolioValido = computed(() => {
   return Boolean(f && String(f).trim() !== '' && !String(f).toLowerCase().includes('sin folio'))
 })
 
+const folioOficialActual = ref('')
+
 const folioEncuestaVisual = computed(() => {
-  const folioAccion = props.actividad?.folio_accion_educativa || 'AE-PENDIENTE'
-  return `ENC-${folioAccion}-${consecutivoActual.value}`
+  if (folioOficialActual.value) return folioOficialActual.value
+  
+  // Extraer distrito del folio de la acción educativa (ej. AE-DD01-2027-F0001 -> DD01)
+  const folioAccion = props.actividad?.folio_accion_educativa || ''
+  const ddMatch = folioAccion.match(/DD\d{2}/i)
+  const distPart = ddMatch ? ddMatch[0].toUpperCase() : `DD${String(props.actividad?.idsede || 1).padStart(2, '0')}`
+  const nextNum = String(consecutivoActual.value || 1).padStart(4, '0')
+  return `EN-${distPart}-2027-F${nextNum}`
 })
 
 // Rango de edad condiciona el tipo de instrumento
@@ -100,8 +108,10 @@ const cargarSiguienteConsecutivo = async () => {
   if (!props.actividad?.id_acciones_educativas) return
   try {
     const { data } = await api.get(`/captura-2027/${props.actividad.id_acciones_educativas}/encuestas`)
-    const total = (data?.data ?? []).length
-    consecutivoActual.value = total + 1
+    consecutivoActual.value = data?.siguiente_consecutivo || (data?.data ?? []).length + 1
+    if (data?.siguiente_folio) {
+      folioOficialActual.value = data.siguiente_folio
+    }
   } catch (e) {
     consecutivoActual.value = 1
   }
@@ -182,8 +192,8 @@ const guardarEncuesta = async () => {
 
     if (result.isConfirmed) {
       // Preparar inmediatamente la siguiente encuesta
-      consecutivoActual.value += 1
       resetRespuestas()
+      await cargarSiguienteConsecutivo()
     } else {
       emit('close')
     }

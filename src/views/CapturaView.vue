@@ -29,7 +29,7 @@ import ModalSolicitarLiberacion from '../components/modals/ModalSolicitarLiberac
 const authStore = useAuthStore()
 const toast = useToast()
 const { animarVista, animarFilasTabla } = useGsapAnimations()
-const { loadRestrictions, getCoveringException } = useDateRestrictions()
+const { loadRestrictions, getCoveringException, activeException } = useDateRestrictions()
 
 const isDistrital = computed(() => Number(authStore.user?.id_tipousuario || authStore.user?.permiso) === 1)
 const isAdmin = computed(() => Number(authStore.user?.id_tipousuario || authStore.user?.permiso) === 2)
@@ -269,8 +269,27 @@ const isTiempoVencido = (row) => {
 // Acciones de Distrital
 const openCaptura = (row, readOnly = false) => {
   if (!readOnly && (Number(row.id_estado) === 1 || Number(row.id_estado) === 2) && isTiempoVencido(row)) {
-    toast.warning('El plazo de captura para esta actividad ha vencido (mes cerrado). Solicita la apertura del mes.')
-    openLiberacion(row)
+    Swal.fire({
+      icon: 'warning',
+      title: 'Periodo de Captura Inhabilitado',
+      html: `
+        <div class="text-left text-sm text-slate-700 dark:text-slate-200 space-y-2">
+          <p>Esta acción educativa corresponde a un periodo pasado cerrado (<strong>${String(row.fecha_programada || '').split('T')[0]}</strong>).</p>
+          <div class="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300">
+            <strong>Aviso de Calendario:</strong> Solo está permitida la captura del mes vigente. Para registrar actividades de meses anteriores que hayan quedado pendientes, se requiere una <strong>habilitación de fechas</strong> concedida por las Oficinas Centrales.
+          </div>
+          <p class="text-xs text-slate-500">¿Deseas enviar una solicitud para abrir este periodo?</p>
+        </div>
+      `,
+      confirmButtonColor: '#6B2D8B',
+      confirmButtonText: 'Solicitar Apertura de Fechas',
+      showCancelButton: true,
+      cancelButtonText: 'Cerrar'
+    }).then((res) => {
+      if (res.isConfirmed) {
+        openLiberacion(row)
+      }
+    })
     return
   }
   activeRow.value = row
@@ -542,6 +561,34 @@ watch(page, () => {
         </div>
       </div>
     </header>
+
+    <!-- Banner Informativo: Periodo Extemporáneo Autorizado -->
+    <div 
+      v-if="activeException && isDistrital"
+      class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl shadow-xs"
+    >
+      <div class="flex items-center gap-3">
+        <div class="p-2.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 rounded-xl shrink-0">
+          <CalendarRange class="w-5 h-5" />
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+            <span>Periodo Extemporáneo Habilitado</span>
+            <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-emerald-200/80 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100 rounded-full font-black">Autorizado</span>
+          </h3>
+          <p class="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
+            Tu dirección distrital cuenta con autorización para registrar y concluir acciones educativas del periodo 
+            <strong>{{ activeException.fecha_inicio }} al {{ activeException.fecha_fin }}</strong>. 
+            <span v-if="activeException.fecha_limite" class="font-semibold">Ventana extraordinaria vigente hasta el {{ activeException.fecha_limite }}.</span>
+          </p>
+        </div>
+      </div>
+      <div class="self-start sm:self-auto shrink-0">
+        <span class="px-3 py-1 rounded-xl bg-white dark:bg-slate-900 text-xs font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+          Captura Abierta
+        </span>
+      </div>
+    </div>
 
     <!-- Grid de Métricas / Contadores Ejecutivos Interactivos -->
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">

@@ -3,6 +3,10 @@ defineProps({
   noPadding: {
     type: Boolean,
     default: false
+  },
+  bodyClass: {
+    type: String,
+    default: ''
   }
 })
 </script>
@@ -13,7 +17,7 @@ defineProps({
       <slot name="header"></slot>
     </div>
     
-    <div :class="['px-5 py-5', { 'p-0': noPadding }]">
+    <div :class="['px-5 py-5', { 'p-0': noPadding }, bodyClass]">
       <slot></slot>
     </div>
     

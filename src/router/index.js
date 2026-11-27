@@ -22,17 +22,15 @@ const routes = [
     name: 'administracion', 
     component: AdministracionView, 
     meta: { requiresAuth: true, roles: [2, 3] },
-    redirect: (to) => {
-      const authStore = useAuthStore()
-      const permiso = Number(authStore.user?.permiso || authStore.user?.idpermiso || 1)
-      return permiso === 3 ? '/administracion/usuarios' : '/administracion/restricciones'
-    },
+    redirect: '/administracion/usuarios',
     children: [
-      { path: 'usuarios', name: 'admin-usuarios', component: () => import('../views/admin/UsuariosView.vue'), meta: { roles: [3] } },
-      { path: 'restricciones', name: 'admin-restricciones', component: () => import('../views/admin/RestriccionesView.vue'), meta: { roles: [2, 3] } },
+      { path: 'usuarios', name: 'admin-usuarios', component: () => import('../views/admin/UsuariosView.vue'), meta: { roles: [2, 3] } },
+      { path: 'habilitacion-fechas', name: 'admin-habilitacion-fechas', component: () => import('../views/admin/RestriccionesView.vue'), meta: { roles: [2, 3] } },
+      { path: 'restricciones', redirect: '/administracion/habilitacion-fechas' },
       { path: 'archivos', name: 'admin-archivos', component: () => import('../views/admin/ArchivosView.vue'), meta: { roles: [2, 3] } },
       { path: 'formatos', name: 'admin-formatos', component: () => import('../views/admin/FormatosView.vue'), meta: { roles: [3] } },
       { path: 'cursos', name: 'admin-cursos', component: () => import('../views/admin/CursosView.vue'), meta: { roles: [2, 3] } },
+      { path: 'metas', name: 'admin-metas', component: () => import('../views/admin/MetasView.vue'), meta: { roles: [2, 3] } },
       { path: 'mensajes', name: 'admin-mensajes', component: () => import('../views/admin/MensajesPredeterminadosView.vue'), meta: { roles: [3] } },
       { path: 'telegram', name: 'admin-telegram', component: () => import('../views/admin/TelegramConfigView.vue'), meta: { roles: [3] } }
     ]
@@ -61,10 +59,12 @@ const routeToModuleMap = {
   reportes: 'reportes',
   administracion: 'administracion',
   'admin-usuarios': 'administracion',
+  'admin-habilitacion-fechas': 'administracion',
   'admin-restricciones': 'administracion',
   'admin-archivos': 'administracion',
   'admin-formatos': 'administracion',
   'admin-cursos': 'administracion',
+  'admin-metas': 'administracion',
   'admin-mensajes': 'administracion',
   'admin-telegram': 'administracion'
 }

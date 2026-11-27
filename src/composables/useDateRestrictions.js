@@ -122,6 +122,19 @@ export function useDateRestrictions() {
   })
 
   /**
+   * Excepción activa aplicable (distrital o global)
+   */
+  const activeException = computed(() => {
+    const userSede = Number(authStore.user?.idsede ?? authStore.user?.id_distrito ?? 0)
+    const today = new Date().toISOString().slice(0, 10)
+    if (userSede > 0) {
+      const dist = configs.value.find(c => Number(c.idsede) === userSede && c.habilitado && (!c.fecha_limite || today <= c.fecha_limite))
+      if (dist) return dist
+    }
+    return configs.value.find(c => Number(c.idsede) === 0 && c.habilitado && (!c.fecha_limite || today <= c.fecha_limite)) || null
+  })
+
+  /**
    * Comprueba si una fecha está permitida para capturar/editar/programar.
    * @param {string} dateStr 'YYYY-MM-DD'
    * @param {string} modulo 'captura' | 'programacion'
@@ -207,6 +220,8 @@ export function useDateRestrictions() {
     isCurrentMonth,
     isGlobalDisabled,
     activeDistrictException,
+    activeException,
+    getCoveringException,
     currentYear,
     currentMonth,
     currentMonthName,

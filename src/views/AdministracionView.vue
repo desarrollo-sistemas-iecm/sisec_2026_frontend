@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Users, CalendarRange, FolderOpen, FileText, Palette, MessageSquare, Send } from '@lucide/vue'
+import { Users, CalendarRange, FolderOpen, FileText, Palette, MessageSquare, Send, Target } from '@lucide/vue'
 import { useAuthStore } from '../stores/authStore.js'
 
 const route = useRoute()
@@ -11,11 +11,12 @@ const userPermiso = computed(() => Number(authStore.user?.id_tipousuario || auth
 const isSuperAdmin = computed(() => userPermiso.value === 3)
 
 const allTabs = [
-  { name: 'Gestión de Usuarios', path: '/administracion/usuarios', icon: Users, superAdminOnly: true },
-  { name: 'Restricciones de Fechas', path: '/administracion/restricciones', icon: CalendarRange, superAdminOnly: false },
+  { name: 'Gestión de Usuarios', path: '/administracion/usuarios', icon: Users, superAdminOnly: false },
+  { name: 'Habilitación de Fechas', path: '/administracion/habilitacion-fechas', icon: CalendarRange, superAdminOnly: false },
   { name: 'Explorador de Archivos', path: '/administracion/archivos', icon: FolderOpen, superAdminOnly: false },
   { name: 'Formatos Oficiales', path: '/administracion/formatos', icon: FileText, superAdminOnly: true },
   { name: 'Catálogo de Acciones Educativas', path: '/administracion/cursos', icon: Palette, superAdminOnly: false },
+  { name: 'Metas y Recordatorios', path: '/administracion/metas', icon: Target, superAdminOnly: false },
   { name: 'Mensajes Predeterminados', path: '/administracion/mensajes', icon: MessageSquare, superAdminOnly: true },
   { name: 'Bot Telegram', path: '/administracion/telegram', icon: Send, superAdminOnly: true }
 ]

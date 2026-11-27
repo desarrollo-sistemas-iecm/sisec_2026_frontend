@@ -34,23 +34,57 @@ const archivo3Thumbnail = ref(null)
 // Campos de Captura
 const modalidad = ref(0) // 0: Presencial, 1: Virtual
 const fechaRealizacion = ref('')
-const duracionHora = ref('01:00') // Hora estimada
-const duracionRealActividad = ref(1) // Duración real en horas (número)
+const duracionHora = ref('01:00') // Hora programada
+const duracionRealActividad = ref('01:00') // Duración real en formato hh:mm
 
-// Función auxiliar para parsear la duración real a número de horas
+// Función auxiliar para parsear y normalizar la duración real a formato hh:mm
 const parseDuracionReal = (val) => {
-  if (val === undefined || val === null || val === '') return 1
-  if (typeof val === 'number') return val > 0 ? val : 1
+  if (val === undefined || val === null || val === '') return '01:00'
   const s = String(val).trim()
+  if (s.includes('.')) {
+    const n = parseFloat(s)
+    if (!isNaN(n) && n > 0) {
+      const hh = Math.floor(n)
+      const mm = Math.round((n - hh) * 60)
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+    }
+  }
   if (s.includes(':')) {
     const parts = s.split(':')
-    const h = parseFloat(parts[0]) || 0
-    const m = (parseFloat(parts[1]) || 0) / 60
-    const total = parseFloat((h + m).toFixed(1))
-    return total > 0 ? total : 1
+    const hh = String(parseInt(parts[0], 10) || 0).padStart(2, '0')
+    let mmNum = parseInt(parts[1], 10) || 0
+    if (mmNum > 59) mmNum = 59
+    const mm = String(mmNum).padStart(2, '0')
+    return `${hh}:${mm}`
   }
-  const n = parseFloat(s)
-  return (!isNaN(n) && n > 0) ? n : 1
+  if (/^\d+$/.test(s)) {
+    if (s.length <= 2) {
+      return `${s.padStart(2, '0')}:00`
+    }
+    if (s.length === 3) {
+      const hh = s[0].padStart(2, '0')
+      let mmNum = parseInt(s.slice(1), 10) || 0
+      if (mmNum > 59) mmNum = 59
+      return `${hh}:${String(mmNum).padStart(2, '0')}`
+    }
+    if (s.length >= 4) {
+      const hh = s.slice(0, 2)
+      let mmNum = parseInt(s.slice(2, 4), 10) || 0
+      if (mmNum > 59) mmNum = 59
+      return `${hh}:${String(mmNum).padStart(2, '0')}`
+    }
+  }
+  return '01:00'
+}
+
+const onDuracionRealInput = (e) => {
+  let val = e.target.value.replace(/[^0-9:]/g, '')
+  if (val.length > 5) val = val.slice(0, 5)
+  duracionRealActividad.value = val
+}
+
+const onDuracionRealBlur = () => {
+  duracionRealActividad.value = parseDuracionReal(duracionRealActividad.value)
 }
 
 // Matriz Demográfica (5 Géneros x 6 Grupos de Edad) con paleta distintiva
@@ -228,7 +262,7 @@ watch(() => props.open, async (isOpen) => {
     modalidad.value = props.actividad.modalidad ?? 0
     fechaRealizacion.value = props.actividad.fecha_programada ? String(props.actividad.fecha_programada).split('T')[0] : ''
     duracionHora.value = props.actividad.hora_programada || '01:00'
-    duracionRealActividad.value = 1
+    duracionRealActividad.value = '01:00'
 
     // Reset archivos seleccionados
     archivo1.value = null
@@ -296,9 +330,9 @@ const onFileSelected = (event, tipo, maxSizeMB) => {
 const getTituloArchivo = (num) => {
   switch (num) {
     case 1: return '1. Formato de registro de acción educativa'
-    case 2: return '2. Formato de asistencia a acción educativa'
-    case 3: return '3. Evidencia fotográfica de la actividad'
-    case 4: return '4. Encuestas de satisfacción consolidadas'
+    case 2: return 'Formato de asistencia a acción educativa'
+    case 3: return '2. Evidencia fotográfica de la actividad'
+    case 4: return '3. Encuestas de satisfacción consolidadas'
     default: return 'Documento de Evidencia Institucional'
   }
 }
@@ -394,8 +428,9 @@ const guardarInformacion = async () => {
     toast.warning('Por favor ingresa la Fecha de realización de la acción educativa.')
     return
   }
-  if (!duracionRealActividad.value || Number(duracionRealActividad.value) <= 0) {
-    toast.warning('Por favor ingresa la duración real de la actividad en horas (ej. 5).')
+  duracionRealActividad.value = parseDuracionReal(duracionRealActividad.value)
+  if (!duracionRealActividad.value || !String(duracionRealActividad.value).trim()) {
+    toast.warning('Por favor ingresa la duración real de la actividad (hh:mm).')
     return
   }
   if (totalGeneral.value <= 0) {
@@ -403,17 +438,18 @@ const guardarInformacion = async () => {
     return
   }
 
-  // Verificar que los 3 primeros archivos existan o se estén subiendo
+  // Verificar que los archivos obligatorios existan o se estén subiendo
   if (!archivo1.value && !archivosExistentes.archivo1) {
     toast.warning('Es obligatorio adjuntar el Formato de registro de acción educativa (Archivo 1).')
     return
   }
-  if (!archivo2.value && !archivosExistentes.archivo2) {
-    toast.warning('Es obligatorio adjuntar el Formato de asistencia a acción educativa (Archivo 2).')
-    return
-  }
+  // Archivo 2 (Formato de asistencia) DESHABILITADO temporalmente por normativa
+  // if (!archivo2.value && !archivosExistentes.archivo2) {
+  //   toast.warning('Es obligatorio adjuntar el Formato de asistencia a acción educativa.')
+  //   return
+  // }
   if (!archivo3.value && !archivosExistentes.archivo3) {
-    toast.warning('Es obligatorio adjuntar la Evidencia fotográfica (Archivo 3).')
+    toast.warning('Es obligatorio adjuntar la Evidencia fotográfica (Archivo 2).')
     return
   }
 
@@ -423,7 +459,7 @@ const guardarInformacion = async () => {
     formData.append('modalidad', modalidad.value)
     formData.append('fecha_realizacion_accion', fechaRealizacion.value)
     formData.append('duracion_hora', duracionHora.value)
-    formData.append('duracion_real_actividad', String(duracionRealActividad.value || '1'))
+    formData.append('duracion_real_actividad', String(duracionRealActividad.value || '01:00'))
     formData.append('folio_accion_educativa', props.actividad?.folio_accion_educativa || '')
     formData.append('id_distrito', props.actividad?.idsede || 1)
 
@@ -558,9 +594,9 @@ const finalizarAccion = async () => {
           </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1 items-end">
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5 truncate">
               Modalidad <span class="text-red-500">*</span>
             </label>
             <select v-model="modalidad" :disabled="readOnlyComputed" class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:border-iecm-morado focus:ring-2 focus:ring-iecm-morado/20 cursor-pointer disabled:opacity-60 transition-all font-medium">
@@ -570,37 +606,40 @@ const finalizarAccion = async () => {
           </div>
 
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5 truncate">
               Fecha de realización <span class="text-red-500">*</span>
             </label>
             <input v-model="fechaRealizacion" type="date" :disabled="readOnlyComputed" class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:border-iecm-morado focus:ring-2 focus:ring-iecm-morado/20 disabled:opacity-60 transition-all font-medium" />
           </div>
 
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
-              Hora estimada
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5 truncate">
+              Hora programada
             </label>
             <input v-model="duracionHora" type="time" :disabled="readOnlyComputed" class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:border-iecm-morado focus:ring-2 focus:ring-iecm-morado/20 disabled:opacity-60 transition-all font-medium" />
           </div>
 
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
-              Duración real de la actividad <span class="text-red-500">*</span>
-            </label>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 truncate">
+                Duración real <span class="text-red-500">*</span>
+              </label>
+              <span class="text-[10px] lowercase font-semibold text-[#6B2D8B] dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200/50 dark:border-purple-800/40">hh:mm</span>
+            </div>
             <div class="relative">
               <input 
-                v-model.number="duracionRealActividad" 
-                type="number" 
-                min="0.5" 
-                max="24" 
-                step="0.5" 
-                placeholder="Ej. 5" 
+                v-model="duracionRealActividad" 
+                type="text" 
+                placeholder="02:35" 
+                maxlength="5"
+                @input="onDuracionRealInput"
+                @blur="onDuracionRealBlur"
                 :disabled="readOnlyComputed" 
-                class="w-full pl-3.5 pr-14 py-2 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:border-iecm-morado focus:ring-2 focus:ring-iecm-morado/20 disabled:opacity-60 transition-all font-bold" 
+                class="w-full pl-3 pr-11 py-2 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:border-iecm-morado focus:ring-2 focus:ring-iecm-morado/20 disabled:opacity-60 transition-all font-bold tracking-wider" 
               />
-              <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-xs font-bold text-slate-400 dark:text-slate-500">
-                horas
-              </div>
+              <span class="absolute inset-y-0 right-0 pr-3 flex items-center text-xs font-bold text-[#6B2D8B] dark:text-purple-400 pointer-events-none select-none">
+                hrs
+              </span>
             </div>
           </div>
         </div>
@@ -744,57 +783,12 @@ const finalizarAccion = async () => {
             </div>
           </div>
 
-          <!-- Archivo 2: Formato de asistencia -->
-          <div class="p-4 bg-white dark:bg-iecm-dark-header border border-slate-200/80 dark:border-white/10 rounded-xl space-y-3 shadow-xs">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <FileText class="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                <span>2. Formato de asistencia a acción educativa *</span>
-              </span>
-              <span v-if="archivosExistentes.archivo2 || archivo2" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                <CheckCircle class="w-3.5 h-3.5" /> {{ archivo2 ? 'Por guardar' : 'Cargado' }}
-              </span>
-              <span v-else class="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full shrink-0">
-                PDF (10MB)
-              </span>
-            </div>
-
-            <input 
-              type="file" 
-              accept=".pdf" 
-              :disabled="readOnlyComputed" 
-              @change="e => onFileSelected(e, 'archivo2', 10)" 
-              class="text-xs w-full file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-100 file:text-iecm-morado hover:file:bg-purple-200 cursor-pointer disabled:opacity-50 transition-all"
-            />
-
-            <!-- Barra de estado y botón Ver Archivo -->
-            <div v-if="archivo2 || archivosExistentes.archivo2" class="pt-2 border-t border-slate-100 dark:border-white/5 flex items-center justify-between gap-2 bg-slate-50/70 dark:bg-slate-900/40 p-2 rounded-lg">
-              <div class="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 truncate font-mono">
-                <CheckCircle class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                <span class="truncate font-medium" :title="archivo2 ? archivo2.name : archivosExistentes.archivo2">
-                  {{ archivo2 ? archivo2.name : archivosExistentes.archivo2 }}
-                </span>
-              </div>
-              <button
-                type="button"
-                @click="verArchivo(2)"
-                :disabled="cargandoArchivo === 2"
-                class="px-2.5 py-1 text-xs font-bold text-purple-700 dark:text-purple-300 bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/70 border border-purple-200 dark:border-purple-800 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0 disabled:opacity-50"
-                title="Visualizar formato de asistencia"
-              >
-                <Loader2 v-if="cargandoArchivo === 2" class="w-3.5 h-3.5 animate-spin text-purple-600" />
-                <Eye v-else class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>Ver archivo</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Archivo 3: Evidencia fotográfica -->
+          <!-- Archivo 3 (Ahora 2 en vista): Evidencia fotográfica -->
           <div class="p-4 bg-white dark:bg-iecm-dark-header border border-slate-200/80 dark:border-white/10 rounded-xl space-y-3 shadow-xs">
             <div class="flex items-center justify-between gap-2">
               <span class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Image class="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                <span>3. Evidencia fotográfica (.png o .jpg) *</span>
+                <span>2. Evidencia fotográfica (.png o .jpg) *</span>
               </span>
               <span v-if="archivosExistentes.archivo3 || archivo3" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
                 <CheckCircle class="w-3.5 h-3.5" /> {{ archivo3 ? 'Por guardar' : 'Cargada' }}
@@ -837,12 +831,25 @@ const finalizarAccion = async () => {
             </div>
           </div>
 
-          <!-- Archivo 4: Encuesta de satisfacción consolidada (Estilo Verde Institucional) -->
-          <div class="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100/40 dark:from-emerald-950/30 dark:to-emerald-900/20 border-2 border-dashed border-emerald-500/50 rounded-xl space-y-3 shadow-xs">
+          <!-- ARCHIVO 2 (Formato de asistencia) DESHABILITADO POR REQUERIMIENTO OFICIAL
+               SE MANTIENE COMENTADO PARA FACILITAR SU REACTIVACIÓN FUTURA SI SE SOLICITA:
+          <div class="p-4 bg-white dark:bg-iecm-dark-header border border-slate-200/80 dark:border-white/10 rounded-xl space-y-3 shadow-xs">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <FileText class="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                <span>Formato de asistencia a acción educativa</span>
+              </span>
+            </div>
+            <input type="file" accept=".pdf" @change="e => onFileSelected(e, 'archivo2', 10)" />
+          </div>
+          -->
+
+          <!-- Archivo 4 (Ahora 3 en vista): Encuesta de satisfacción consolidada (Estilo Verde Institucional ancho completo) -->
+          <div class="md:col-span-2 p-4 bg-gradient-to-br from-emerald-50 to-emerald-100/40 dark:from-emerald-950/30 dark:to-emerald-900/20 border-2 border-dashed border-emerald-500/50 rounded-xl space-y-3 shadow-xs">
             <div class="flex items-center justify-between gap-2">
               <span class="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                 <FileCheck2 class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span>4. Encuestas de satisfacción consolidadas</span>
+                <span>3. Encuestas de satisfacción consolidadas</span>
               </span>
               <span v-if="archivosExistentes.archivo4 || archivo4" class="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 border border-emerald-300 dark:border-emerald-700">
                 <CheckCircle class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> {{ archivo4 ? 'Por guardar' : 'Consolidado Listo' }}
