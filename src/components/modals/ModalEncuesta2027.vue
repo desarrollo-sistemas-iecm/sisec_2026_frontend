@@ -74,12 +74,23 @@ const folioOficialActual = ref('')
 const folioEncuestaVisual = computed(() => {
   if (folioOficialActual.value) return folioOficialActual.value
   
-  // Extraer distrito del folio de la acción educativa (ej. AE-DD01-2027-F0001 -> DD01)
-  const folioAccion = props.actividad?.folio_accion_educativa || ''
-  const ddMatch = folioAccion.match(/DD\d{2}/i)
-  const distPart = ddMatch ? ddMatch[0].toUpperCase() : `DD${String(props.actividad?.idsede || 1).padStart(2, '0')}`
-  const nextNum = String(consecutivoActual.value || 1).padStart(4, '0')
-  return `EN-${distPart}-2027-F${nextNum}`
+  let base = String(props.actividad?.folio_accion_educativa || '').trim()
+  if (!base || base.toLowerCase().includes('sin folio')) {
+    const ddMatch = base.match(/DD\d{2}/i)
+    const distPart = ddMatch ? ddMatch[0].toUpperCase() : `DD${String(props.actividad?.idsede || 1).padStart(2, '0')}`
+    const actId = String(props.actividad?.id_acciones_educativas || 1).padStart(4, '0')
+    base = `AE-${distPart}-2027-F${actId}`
+  }
+
+  // Reemplazar prefijo AE por EN
+  if (base.startsWith('AE-')) {
+    base = 'EN-' + base.substring(3)
+  } else if (!base.startsWith('EN-')) {
+    base = 'EN-' + base
+  }
+
+  const padConsecutivo = String(consecutivoActual.value || 1).padStart(2, '0')
+  return `${base}-${padConsecutivo}`
 })
 
 // Rango de edad condiciona el tipo de instrumento
